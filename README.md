@@ -24,6 +24,7 @@ This repository is under phased construction. See `docs/progress/` for what is r
 | 2 | Project intake, manifest hashing, state machine, orchestrator | done |
 | 3 | Agent runtime (PydanticAI), model factory, Problem Analyst, ProblemSpec | implemented; live API test pending an API key |
 | 4 | Data profiling (Polars), Pandera schema validation, quality/leakage gates | done (CSV only) |
+| 5 | Method/proposal/experiment schemas, capability registry, experiment planner | core done; research/council agents pending an API key |
 | 3+ | Agents, data subsystem, model council, experiments, evidence, paper | planned |
 
 Nothing in the README should be read as a claim that later phases are implemented.

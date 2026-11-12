@@ -7,6 +7,7 @@ from pathlib import Path
 
 import yaml
 
+from mmos.schemas.experiment import ExperimentSpec
 from mmos.schemas.problem import ProblemSpec
 from mmos.schemas.project import ProjectConfig, ProjectManifest
 
@@ -76,6 +77,10 @@ class ProjectPaths:
         return self.manifest_dir / "leakage_report.json"
 
     @property
+    def experiments_dir(self) -> Path:
+        return self.root / "experiments"
+
+    @property
     def raw_data_dir(self) -> Path:
         return self.root / "data" / "raw"
 
@@ -135,6 +140,23 @@ def save_problem_spec(paths: ProjectPaths, spec: ProblemSpec) -> None:
 
 def load_problem_spec(paths: ProjectPaths) -> ProblemSpec:
     return ProblemSpec.model_validate_json(paths.problem_spec_file.read_text(encoding="utf-8"))
+
+
+def experiment_spec_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiments_dir / experiment_id / "experiment_spec.json"
+
+
+def save_experiment_spec(paths: ProjectPaths, spec: ExperimentSpec) -> Path:
+    target = experiment_spec_file(paths, spec.experiment_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, spec.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_experiment_spec(paths: ProjectPaths, experiment_id: str) -> ExperimentSpec:
+    return ExperimentSpec.model_validate_json(
+        experiment_spec_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
 
 
 def create_project(
