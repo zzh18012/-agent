@@ -22,7 +22,7 @@ This repository is under phased construction. See `docs/progress/` for what is r
 | 0 | Environment and repository inspection | done |
 | 1 | Project skeleton, configuration, schemas, logging, CLI, tests | done |
 | 2 | Project intake, manifest hashing, state machine, orchestrator | done |
-| 3 | Agent runtime (PydanticAI), model factory, Problem Analyst, ProblemSpec | implemented; live API test pending an API key |
+| 3 | Agent runtime (PydanticAI), model factory, Problem Analyst, ProblemSpec | done (live-verified) |
 | 4 | Data profiling (Polars), Pandera schema validation, quality/leakage gates | done (CSV only) |
 | 5 | Research Agent, Model Council, registry, experiment planner | done (live-verified) |
 | 6 | LocalExecutor with safety boundary, timeout, audited execution records | done |
@@ -120,9 +120,6 @@ uv run mmos redteam <project_id> <experiment_id> [--tournament <tournament_id>]
 uv run mmos run <project_id> --target <column> --feature <column> --feature <column>
 ```
 
-Later phases add `analyze-problem`, `analyze-data`,
-`research`, `propose-models`, `prototype`, `tournament`, `validate`, `freeze-evidence`,
-`paper`, `redteam`, `release`, and `run`.
 
 ## Concepts
 
