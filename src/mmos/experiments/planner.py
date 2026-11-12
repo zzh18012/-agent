@@ -50,6 +50,7 @@ class ExperimentPlanner:
         dataset_version: str | None = None,
         acceptance_criteria: list[str] | None = None,
         failure_criteria: list[str] | None = None,
+        include_baseline: bool = False,
     ) -> ExperimentSpec:
         if target_column in feature_set:
             raise ValueError(f"target column {target_column!r} must not be part of the feature set")
@@ -58,8 +59,22 @@ class ExperimentPlanner:
                 f"proposal {proposal.proposal_id!r} names no registry model; "
                 "an experiment cannot be planned"
             )
-        capabilities = self.registry.require(proposal.registry_model_ids)
+        model_ids = list(proposal.registry_model_ids)
+        capabilities = self.registry.require(model_ids)
         task_type = capabilities[0].task_types[0]
+
+        if include_baseline:
+            baseline = next(
+                (
+                    capability
+                    for capability in self.registry.find(task_type)
+                    if capability.is_baseline and capability.model_id not in model_ids
+                ),
+                None,
+            )
+            if baseline is not None:
+                model_ids.insert(0, baseline.model_id)
+                capabilities = self.registry.require(model_ids)
 
         resolved_metrics = metrics or DEFAULT_METRICS.get(task_type)
         if not resolved_metrics:
@@ -81,7 +96,7 @@ class ExperimentPlanner:
             split_strategy=split_strategy,
             validation_strategy=validation_strategy,
             n_splits=n_splits,
-            models=proposal.registry_model_ids,
+            models=model_ids,
             metrics=resolved_metrics,
             random_seed=random_seed,
             required_artifacts=["metrics.json", "predictions.parquet"],

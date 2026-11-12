@@ -10,6 +10,8 @@ import yaml
 from mmos.schemas.experiment import ExperimentSpec
 from mmos.schemas.problem import ProblemSpec
 from mmos.schemas.project import ProjectConfig, ProjectManifest
+from mmos.schemas.proposal import CouncilDecision, CritiqueReport, ModelProposal, ProposalList
+from mmos.schemas.research import ResearchResult
 from mmos.schemas.tournament import TournamentResult
 
 PROJECT_SUBDIRS: tuple[str, ...] = (
@@ -60,6 +62,22 @@ class ProjectPaths:
     @property
     def problem_spec_file(self) -> Path:
         return self.manifest_dir / "problem_spec.json"
+
+    @property
+    def research_result_file(self) -> Path:
+        return self.manifest_dir / "research_result.json"
+
+    @property
+    def proposals_file(self) -> Path:
+        return self.manifest_dir / "model_proposals.json"
+
+    @property
+    def critiques_file(self) -> Path:
+        return self.manifest_dir / "council_critiques.json"
+
+    @property
+    def council_decision_file(self) -> Path:
+        return self.manifest_dir / "council_decision.json"
 
     @property
     def data_profile_file(self) -> Path:
@@ -164,6 +182,44 @@ def save_problem_spec(paths: ProjectPaths, spec: ProblemSpec) -> None:
 
 def load_problem_spec(paths: ProjectPaths) -> ProblemSpec:
     return ProblemSpec.model_validate_json(paths.problem_spec_file.read_text(encoding="utf-8"))
+
+
+def save_research_result(paths: ProjectPaths, result: ResearchResult) -> None:
+    atomic_write_text(paths.research_result_file, result.model_dump_json(indent=2) + "\n")
+
+
+def load_research_result(paths: ProjectPaths) -> ResearchResult:
+    return ResearchResult.model_validate_json(
+        paths.research_result_file.read_text(encoding="utf-8")
+    )
+
+
+def save_proposals(paths: ProjectPaths, proposals: list[ModelProposal]) -> None:
+    payload = ProposalList(proposals=proposals)
+    atomic_write_text(paths.proposals_file, payload.model_dump_json(indent=2) + "\n")
+
+
+def load_proposals(paths: ProjectPaths) -> list[ModelProposal]:
+    payload = ProposalList.model_validate_json(paths.proposals_file.read_text(encoding="utf-8"))
+    return payload.proposals
+
+
+def save_critiques(paths: ProjectPaths, report: CritiqueReport) -> None:
+    atomic_write_text(paths.critiques_file, report.model_dump_json(indent=2) + "\n")
+
+
+def load_critiques(paths: ProjectPaths) -> CritiqueReport:
+    return CritiqueReport.model_validate_json(paths.critiques_file.read_text(encoding="utf-8"))
+
+
+def save_council_decision(paths: ProjectPaths, decision: CouncilDecision) -> None:
+    atomic_write_text(paths.council_decision_file, decision.model_dump_json(indent=2) + "\n")
+
+
+def load_council_decision(paths: ProjectPaths) -> CouncilDecision:
+    return CouncilDecision.model_validate_json(
+        paths.council_decision_file.read_text(encoding="utf-8")
+    )
 
 
 def experiment_spec_file(paths: ProjectPaths, experiment_id: str) -> Path:

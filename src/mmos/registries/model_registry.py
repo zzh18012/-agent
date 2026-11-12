@@ -35,6 +35,12 @@ class ModelRegistry:
     def require(self, model_ids: Iterable[str]) -> list[ModelCapability]:
         return [self.get(model_id) for model_id in model_ids]
 
+    def has(self, model_id: str) -> bool:
+        return model_id in self._by_id
+
+    def ids(self) -> set[str]:
+        return set(self._by_id)
+
     def find(self, task_type: TaskType | None = None) -> list[ModelCapability]:
         capabilities = list(self._by_id.values())
         if task_type is None:

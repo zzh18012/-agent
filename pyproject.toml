@@ -50,7 +50,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q -m 'not integration'"
 markers = ["integration: requires external services or credentials"]
 
 [tool.pyright]

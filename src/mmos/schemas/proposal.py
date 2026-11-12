@@ -1,6 +1,6 @@
 from enum import StrEnum
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from mmos.schemas.common import MMOSModel
 
@@ -66,7 +66,48 @@ class CouncilDecision(MMOSModel):
     selected_for_prototype: list[str] = Field(min_length=1)
     notes: str = ""
 
+    @model_validator(mode="after")
+    def _selection_is_scored(self) -> "CouncilDecision":
+        scored = {score.proposal_id for score in self.scores}
+        unknown = [
+            proposal_id for proposal_id in self.selected_for_prototype if proposal_id not in scored
+        ]
+        if unknown:
+            raise ValueError(f"selected proposals have no score: {', '.join(unknown)}")
+        return self
+
     @property
     def rejected(self) -> list[str]:
         selected = set(self.selected_for_prototype)
         return [score.proposal_id for score in self.scores if score.proposal_id not in selected]
+
+
+class ExpertSelection(MMOSModel):
+    roles: list[ExpertRole] = Field(min_length=2, max_length=4)
+    rationale: str
+
+    @model_validator(mode="after")
+    def _roles_are_unique(self) -> "ExpertSelection":
+        if len(self.roles) != len(set(self.roles)):
+            raise ValueError("expert roles must be unique")
+        return self
+
+
+class ProposalBatch(MMOSModel):
+    proposals: list[ModelProposal] = Field(min_length=1)
+
+
+class ProposalList(MMOSModel):
+    proposals: list[ModelProposal] = Field(min_length=1)
+
+
+class ProposalCritique(MMOSModel):
+    proposal_id: str
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+    recommendation: str
+
+
+class CritiqueReport(MMOSModel):
+    critiques: list[ProposalCritique] = Field(min_length=1)

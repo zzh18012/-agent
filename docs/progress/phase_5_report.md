@@ -59,3 +59,20 @@ uv run pyright       -> 0 errors, 0 warnings
 `LocalExecutor`: project-scoped command execution with argv-only invocation, denylist
 for dangerous executables, deny-by-default shell usage, timeout, captured stdout/stderr,
 and an auditable `ExecutionResult`.
+
+## Update — 2026-11-12 (after API key was configured)
+
+The deferred research and council agents are now implemented and live-verified:
+
+- `ResearchAgent` produces `ResearchResult` from the ProblemSpec and registry catalog.
+- `ModelCouncil` selects 2-4 expert roles, runs independent proposal rounds, a
+  cross-critique round, and a judge; proposals are normalized to system-owned ids and
+  dropped if they name unknown subproblems or unregistered models; judge output is
+  filtered and falls back deterministically only when it selects nothing valid.
+- CLI: `research`, `propose-models`, `plan-experiment`. Experiment planning injects the
+  registered baseline by default.
+- Live integration test (`tests/test_live_agents.py`) passed in 220s with real DeepSeek
+  calls, including nested structured output (9 model calls).
+
+Known limitation: the council can only select models that exist in the executable
+registry; mechanistic proposals without a registered engine are dropped.

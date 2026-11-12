@@ -24,7 +24,7 @@ This repository is under phased construction. See `docs/progress/` for what is r
 | 2 | Project intake, manifest hashing, state machine, orchestrator | done |
 | 3 | Agent runtime (PydanticAI), model factory, Problem Analyst, ProblemSpec | implemented; live API test pending an API key |
 | 4 | Data profiling (Polars), Pandera schema validation, quality/leakage gates | done (CSV only) |
-| 5 | Method/proposal/experiment schemas, capability registry, experiment planner | core done; research/council agents pending an API key |
+| 5 | Research Agent, Model Council, registry, experiment planner | done (live-verified) |
 | 6 | LocalExecutor with safety boundary, timeout, audited execution records | done |
 | 7 | Snakemake workflow: data gate → baseline/candidates → evaluation → artifacts | done (tabular regression/classification) |
 | 8 | MLflow ledger: per-project SQLite store, params/tags/metrics/artifacts | done |
@@ -88,6 +88,12 @@ uv run mmos analyze-problem <project_id>
 
 # profile data and run quality/leakage gates (CSV)
 uv run mmos analyze-data <project_id> --target <target_column>
+
+# survey methods, run the expert council, plan a concrete experiment
+uv run mmos research <project_id>
+uv run mmos propose-models <project_id>
+uv run mmos plan-experiment <project_id> --proposal-id <id> --target <column> \
+  --feature <column> --feature <column>
 
 # execute a planned experiment through Snakemake (spec must exist first)
 uv run mmos run-experiment <project_id> <experiment_id> [--dry-run]

@@ -10,28 +10,48 @@ from rich.console import Console
 from rich.table import Table
 
 from mmos import __version__
-from mmos.agents import MissingAPIKeyError, ProblemAnalyst, UnsupportedProviderError, build_model
+from mmos.agents import (
+    CouncilError,
+    MissingAPIKeyError,
+    ModelCouncil,
+    ProblemAnalyst,
+    ResearchAgent,
+    UnsupportedProviderError,
+    build_model,
+)
 from mmos.config import get_settings
+from mmos.core.dataset import dataset_fingerprint
 from mmos.core.project import (
     ProjectPaths,
     create_project,
     experiment_spec_file,
     load_manifest,
+    load_problem_spec,
     load_project_config,
+    load_proposals,
+    load_research_result,
     resolve_project,
+    save_council_decision,
+    save_critiques,
+    save_experiment_spec,
     save_problem_spec,
+    save_proposals,
+    save_research_result,
     save_tournament_result,
 )
 from mmos.core.state_machine import allowed_targets
 from mmos.data import DataAgent
 from mmos.evidence import EvidenceError, add_claim, freeze_experiment
 from mmos.execution import LocalExecutor
+from mmos.experiments.planner import ExperimentPlanner
 from mmos.experiments.tournament import Tournament
 from mmos.orchestration import Orchestrator
 from mmos.paper import PaperError, build_paper, render_paper
 from mmos.registries import ModelRegistry
+from mmos.schemas.data import DataSchema
 from mmos.schemas.experiment import ExperimentResult
 from mmos.schemas.project import SourceRole
+from mmos.schemas.proposal import CritiqueReport
 from mmos.schemas.states import ESCAPE_STATES, ProjectState
 from mmos.utils.logging import configure_logging
 from mmos.validation import validate_experiment
@@ -654,3 +674,204 @@ def paper(
     console.print(f"Report: {target}")
     for figure in ast.figures:
         console.print(f"Figure: {figure.path}")
+
+
+def _registry_or_exit() -> ModelRegistry:
+    registry_file = get_settings().model_registry_file
+    if not registry_file.exists():
+        console.print(f"Error: model registry not found: {registry_file}", style="red")
+        raise typer.Exit(code=1)
+    return ModelRegistry.load(registry_file)
+
+
+def _model_or_exit():
+    try:
+        return build_model(get_settings())
+    except (MissingAPIKeyError, UnsupportedProviderError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+
+@app.command()
+def research(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Survey candidate methods for the understood problem."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    config = load_project_config(paths)
+    if config.state not in (ProjectState.DATA_VALIDATED, ProjectState.RESEARCH_COMPLETED):
+        console.print(
+            f"Project state {config.state.value} does not allow research; "
+            "expected DATA_VALIDATED or RESEARCH_COMPLETED."
+        )
+        raise typer.Exit(code=1)
+    if not paths.problem_spec_file.exists():
+        console.print("Error: no ProblemSpec found; run analyze-problem first.", style="red")
+        raise typer.Exit(code=1)
+
+    spec = load_problem_spec(paths)
+    result = ResearchAgent(_model_or_exit()).research(spec, registry=_registry_or_exit())
+    save_research_result(paths, result)
+
+    table = Table(title=f"Research methods ({len(result.methods)})")
+    table.add_column("Id")
+    table.add_column("Method")
+    table.add_column("Tools")
+    for method in result.methods:
+        table.add_row(method.method_id, method.name, ", ".join(method.implementation_tools))
+    console.print(table)
+
+    if config.state is ProjectState.DATA_VALIDATED:
+        config = Orchestrator(paths).transition(
+            ProjectState.RESEARCH_COMPLETED,
+            reason=f"research completed ({len(result.methods)} methods)",
+        )
+    console.print(f"State: {config.state.value}")
+
+
+@app.command(name="propose-models")
+def propose_models(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Run the expert council and record prototypable model proposals."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    config = load_project_config(paths)
+    if config.state not in (ProjectState.RESEARCH_COMPLETED, ProjectState.CANDIDATES_PROPOSED):
+        console.print(
+            f"Project state {config.state.value} does not allow council proposals; "
+            "expected RESEARCH_COMPLETED or CANDIDATES_PROPOSED."
+        )
+        raise typer.Exit(code=1)
+    for required in (paths.problem_spec_file, paths.research_result_file):
+        if not required.exists():
+            console.print(f"Error: missing artifact: {required.name}", style="red")
+            raise typer.Exit(code=1)
+
+    data_summary = None
+    if paths.data_schema_file.exists():
+        schema = DataSchema.model_validate_json(paths.data_schema_file.read_text(encoding="utf-8"))
+        data_summary = "\n".join(
+            f"- {table.name}: "
+            + ", ".join(f"{column.name} ({column.dtype})" for column in table.columns)
+            for table in schema.tables
+        )
+
+    try:
+        outcome = ModelCouncil(_model_or_exit()).propose(
+            load_problem_spec(paths),
+            load_research_result(paths),
+            registry=_registry_or_exit(),
+            data_summary=data_summary,
+        )
+    except CouncilError as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    save_proposals(paths, outcome.proposals)
+    save_council_decision(paths, outcome.decision)
+    if outcome.critiques:
+        save_critiques(paths, CritiqueReport(critiques=outcome.critiques))
+
+    table = Table(title=f"Council proposals ({len(outcome.proposals)})")
+    table.add_column("Proposal id")
+    table.add_column("Name")
+    table.add_column("Role")
+    table.add_column("Models")
+    table.add_column("Selected")
+    selected = set(outcome.decision.selected_for_prototype)
+    for proposal in outcome.proposals:
+        table.add_row(
+            proposal.proposal_id,
+            proposal.name,
+            proposal.expert_role.value,
+            ", ".join(proposal.registry_model_ids),
+            "yes" if proposal.proposal_id in selected else "no",
+        )
+    console.print(table)
+    for note in outcome.notes:
+        console.print(f"  note: {note}")
+
+    if config.state is ProjectState.RESEARCH_COMPLETED:
+        config = Orchestrator(paths).transition(
+            ProjectState.CANDIDATES_PROPOSED,
+            reason=f"council selected {len(outcome.decision.selected_for_prototype)} proposal(s)",
+        )
+    console.print(f"State: {config.state.value}")
+
+
+@app.command(name="plan-experiment")
+def plan_experiment(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    proposal_id: Annotated[str, typer.Option("--proposal-id", help="Proposal to plan.")],
+    target: Annotated[str, typer.Option("--target", help="Target column.")],
+    features: Annotated[
+        list[str] | None,
+        typer.Option("--feature", help="Feature column; repeat for multiple."),
+    ] = None,
+    metrics: Annotated[
+        list[str] | None,
+        typer.Option("--metric", help="Metric; repeat to override defaults."),
+    ] = None,
+    n_splits: Annotated[int, typer.Option("--splits", help="Cross-validation folds.")] = 5,
+    seed: Annotated[int, typer.Option("--seed", help="Random seed.")] = 0,
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Turn one council proposal into a reproducible experiment spec."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    config = load_project_config(paths)
+    if config.state not in (
+        ProjectState.CANDIDATES_PROPOSED,
+        ProjectState.PROTOTYPING,
+    ):
+        console.print(
+            f"Project state {config.state.value} does not allow experiment planning; "
+            "expected CANDIDATES_PROPOSED or PROTOTYPING."
+        )
+        raise typer.Exit(code=1)
+    if not features:
+        console.print("Error: at least one --feature is required.", style="red")
+        raise typer.Exit(code=1)
+    if not paths.proposals_file.exists():
+        console.print("Error: no proposals found; run propose-models first.", style="red")
+        raise typer.Exit(code=1)
+
+    proposals = {proposal.proposal_id: proposal for proposal in load_proposals(paths)}
+    if proposal_id not in proposals:
+        console.print(f"Error: unknown proposal id: {proposal_id}", style="red")
+        raise typer.Exit(code=1)
+
+    try:
+        spec = ExperimentPlanner(_registry_or_exit()).plan(
+            proposals[proposal_id],
+            dataset_hash=dataset_fingerprint(load_manifest(paths)),
+            target_column=target,
+            feature_set=features,
+            metrics=metrics,
+            n_splits=n_splits,
+            random_seed=seed,
+            include_baseline=True,
+        )
+    except (ValueError, KeyError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    target_path = save_experiment_spec(paths, spec)
+    console.print(f"Experiment: {spec.experiment_id}")
+    console.print(f"Models: {', '.join(spec.models)}")
+    console.print(f"Metrics: {', '.join(spec.metrics)}")
+    console.print(f"Spec: {target_path}")
+
+    if config.state is ProjectState.CANDIDATES_PROPOSED:
+        config = Orchestrator(paths).transition(
+            ProjectState.PROTOTYPING,
+            reason=f"experiment planned for {proposal_id}",
+        )
+    console.print(f"State: {config.state.value}")

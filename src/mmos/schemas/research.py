@@ -1,4 +1,4 @@
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from mmos.schemas.common import MMOSModel
 
@@ -24,3 +24,10 @@ class MethodCard(MMOSModel):
 class ResearchResult(MMOSModel):
     problem_id: str
     methods: list[MethodCard] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _method_ids_are_unique(self) -> "ResearchResult":
+        ids = [method.method_id for method in self.methods]
+        if len(ids) != len(set(ids)):
+            raise ValueError("method_id values must be unique")
+        return self
