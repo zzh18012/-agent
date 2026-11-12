@@ -7,6 +7,7 @@ from mmos.schemas.data import (
     Severity,
     TableProfile,
 )
+from mmos.schemas.execution import ExecutionResult
 from mmos.schemas.experiment import ExperimentSpec
 from mmos.schemas.problem import ProblemSpec, SubProblem, Variable
 from mmos.schemas.project import InputFileRecord, ProjectConfig, ProjectManifest, SourceRole
@@ -28,6 +29,7 @@ __all__ = [
     "DataQualityReport",
     "DataSchema",
     "DatasetProfile",
+    "ExecutionResult",
     "ExperimentSpec",
     "ExpertRole",
     "InputFileRecord",

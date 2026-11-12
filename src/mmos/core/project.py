@@ -81,6 +81,10 @@ class ProjectPaths:
         return self.root / "experiments"
 
     @property
+    def executions_dir(self) -> Path:
+        return self.log_dir / "executions"
+
+    @property
     def raw_data_dir(self) -> Path:
         return self.root / "data" / "raw"
 
