@@ -18,31 +18,12 @@ from mmos.core.project import (
     load_experiment_spec,
     load_manifest,
 )
+from mmos.data.table import load_single_table
 from mmos.experiments.engines import build_estimator, task_type_for
 from mmos.experiments.metrics import compute_metrics
 from mmos.schemas.experiment import ExperimentResult
-from mmos.schemas.project import SourceRole
 from mmos.schemas.registry import TaskType
 from mmos.tracking import log_experiment_run
-
-
-def _data_files(paths: ProjectPaths) -> list[Path]:
-    manifest = load_manifest(paths)
-    return [
-        paths.root / record.path
-        for record in manifest.inputs
-        if record.source_role is SourceRole.DATA
-    ]
-
-
-def _load_single_table(paths: ProjectPaths) -> pl.DataFrame:
-    data_files = _data_files(paths)
-    if len(data_files) != 1:
-        raise ValueError(
-            f"the executable runner expects exactly one data table, found {len(data_files)}; "
-            "multi-table experiments are not implemented yet"
-        )
-    return pl.read_csv(data_files[0], try_parse_dates=True)
 
 
 def run_experiment(paths: ProjectPaths, experiment_id: str) -> ExperimentResult:
@@ -55,7 +36,7 @@ def run_experiment(paths: ProjectPaths, experiment_id: str) -> ExperimentResult:
             f"(spec {spec.dataset_hash[:12]}, current {fingerprint[:12]})"
         )
 
-    df = _load_single_table(paths)
+    df = load_single_table(paths)
     required = [*spec.feature_set, spec.target_column]
     missing = [column for column in required if column not in df.columns]
     if missing:
@@ -93,16 +74,23 @@ def run_experiment(paths: ProjectPaths, experiment_id: str) -> ExperimentResult:
 
     folds = list(split_iter)
     metrics_by_model: dict[str, dict[str, float]] = {}
+    fold_metrics_by_model: dict[str, list[dict[str, float]]] = {}
     prediction_rows: list[dict[str, object]] = []
+    fold_metric_names = [name for name in spec.metrics if name != "roc_auc"]
 
     for model_id in spec.models:
         oof_pred = np.full(len(y), np.nan)
         oof_proba = np.full((len(y), len(classes)), np.nan) if classes is not None else None
+        fold_scores: list[dict[str, float]] = []
 
         for train_index, test_index in folds:
             estimator = build_estimator(model_id, random_state=spec.random_seed)
             estimator.fit(x[train_index], y[train_index])
-            oof_pred[test_index] = estimator.predict(x[test_index])
+            fold_pred = estimator.predict(x[test_index])
+            oof_pred[test_index] = fold_pred
+            fold_scores.append(
+                compute_metrics(task_type, y[test_index], fold_pred, None, fold_metric_names)
+            )
 
             if oof_proba is not None:
                 fold_proba = estimator.predict_proba(x[test_index])
@@ -119,8 +107,14 @@ def run_experiment(paths: ProjectPaths, experiment_id: str) -> ExperimentResult:
         metrics_by_model[model_id] = compute_metrics(
             task_type, y, oof_pred, oof_proba, spec.metrics
         )
+        fold_metrics_by_model[model_id] = fold_scores
         prediction_rows.extend(
-            {"row_index": index, "model": model_id, "prediction": float(oof_pred[index])}
+            {
+                "row_index": index,
+                "model": model_id,
+                "prediction": oof_pred[index].item(),
+                "actual": y[index].item(),
+            }
             for index in range(len(y))
         )
 
@@ -134,6 +128,7 @@ def run_experiment(paths: ProjectPaths, experiment_id: str) -> ExperimentResult:
         random_seed=spec.random_seed,
         n_splits=spec.n_splits,
         models=metrics_by_model,
+        fold_metrics=fold_metrics_by_model,
         generated_at=datetime.now(UTC).replace(microsecond=0),
     )
 

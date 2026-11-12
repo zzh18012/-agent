@@ -6,6 +6,7 @@ from mmos.data.profiling import (
     read_csv,
 )
 from mmos.data.quality import build_quality_report, check_table
+from mmos.data.table import data_files, load_single_table
 
 __all__ = [
     "DataAgent",
@@ -13,7 +14,9 @@ __all__ = [
     "build_quality_report",
     "check_leakage",
     "check_table",
+    "data_files",
     "infer_table_schema",
+    "load_single_table",
     "profile_table",
     "read_csv",
 ]

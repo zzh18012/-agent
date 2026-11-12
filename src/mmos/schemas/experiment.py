@@ -44,4 +44,5 @@ class ExperimentResult(MMOSModel):
     random_seed: int
     n_splits: int
     models: dict[str, dict[str, float]]
+    fold_metrics: dict[str, list[dict[str, float]]] = Field(default_factory=dict)
     generated_at: datetime

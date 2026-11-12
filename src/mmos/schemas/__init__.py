@@ -24,6 +24,7 @@ from mmos.schemas.state import StateTransitionRecord
 from mmos.schemas.states import ProjectState
 from mmos.schemas.tournament import TournamentEntry, TournamentResult
 from mmos.schemas.tracking import MLflowRunRecord
+from mmos.schemas.validation import ValidationIssue, ValidationReport, ValidationStatus
 
 __all__ = [
     "Complexity",
@@ -56,5 +57,8 @@ __all__ = [
     "TaskType",
     "TournamentEntry",
     "TournamentResult",
+    "ValidationIssue",
+    "ValidationReport",
+    "ValidationStatus",
     "Variable",
 ]

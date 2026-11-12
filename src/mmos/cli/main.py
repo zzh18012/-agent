@@ -32,6 +32,7 @@ from mmos.schemas.experiment import ExperimentResult
 from mmos.schemas.project import SourceRole
 from mmos.schemas.states import ESCAPE_STATES, ProjectState
 from mmos.utils.logging import configure_logging
+from mmos.validation import validate_experiment
 
 console = Console()
 
@@ -476,3 +477,64 @@ def tournament(
             console.print(f"  note: {note}")
         raise typer.Exit(code=1)
     console.print(f"Saved: {saved_to}")
+
+
+@app.command()
+def validate(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    experiment_id: Annotated[str, typer.Argument(help="Completed experiment id.")],
+    validators: Annotated[
+        list[str] | None,
+        typer.Option("--validator", help="Validator name; repeat to select a subset."),
+    ] = None,
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Run independent validators against a completed experiment."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    config = load_project_config(paths)
+    if config.state in _EARLY_STATES or config.state in ESCAPE_STATES:
+        console.print(
+            f"Project state {config.state.value} does not allow validation; "
+            "run an experiment first and resolve any blocking state."
+        )
+        raise typer.Exit(code=1)
+
+    metrics_file = paths.experiments_dir / experiment_id / "artifacts" / "metrics.json"
+    if not metrics_file.exists():
+        console.print(f"Error: no metrics for experiment {experiment_id!r}", style="red")
+        raise typer.Exit(code=1)
+
+    try:
+        reports = validate_experiment(paths, experiment_id, validators)
+    except (ValueError, FileNotFoundError, KeyError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    table = Table(title=f"Validation {experiment_id}")
+    table.add_column("Validator")
+    table.add_column("Status")
+    table.add_column("Severity")
+    table.add_column("Blocking")
+    table.add_column("Issues", justify="right")
+    for report in reports:
+        table.add_row(
+            report.validator,
+            report.status.value,
+            report.severity.value,
+            "yes" if report.blocking else "no",
+            str(len(report.issues)),
+        )
+    console.print(table)
+
+    for report in reports:
+        for issue in report.issues:
+            console.print(
+                f"  [{issue.severity.value}] {report.validator}/{issue.code}: {issue.message}"
+            )
+
+    if any(report.blocking for report in reports):
+        console.print("Validation FAILED with blocking issues.", style="red")
+        raise typer.Exit(code=1)
+    console.print("Validation passed.")
