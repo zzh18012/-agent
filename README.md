@@ -1,0 +1,134 @@
+# MathModelingOS
+
+MathModelingOS (`mmos`) is a local-first system for running mathematical modeling
+competitions and research projects end to end: understanding the problem, checking
+data, proposing and competing models, executing real experiments, validating results,
+freezing verified evidence, and only then writing the paper.
+
+The core rule of the system is simple:
+
+> **An LLM may propose anything. Only a real program execution may produce a result.**
+
+Every number that ends up in a report must trace back to source data, an experiment
+configuration, a code version, an actual run, and a validation report. Natural-language
+output from an agent is never treated as evidence.
+
+## Status
+
+This repository is under phased construction. See `docs/progress/` for what is real today.
+
+| Phase | Scope | Status |
+| --- | --- | --- |
+| 0 | Environment and repository inspection | done |
+| 1 | Project skeleton, configuration, schemas, logging, CLI, tests | done |
+| 2 | Project intake, manifest hashing, state machine, orchestrator | planned |
+| 3+ | Agents, data subsystem, model council, experiments, evidence, paper | planned |
+
+Nothing in the README should be read as a claim that later phases are implemented.
+
+## Requirements
+
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/)
+- Git
+
+Docker is intentionally not used. Everything runs directly in a project-local virtual
+environment on the host machine.
+
+## Install
+
+```bash
+uv sync
+```
+
+This creates `.venv/`, installs the package in editable mode, and installs the dev tools.
+
+## Configure
+
+```bash
+cp .env.example .env
+```
+
+Then set `MMOS_LLM_API_KEY` (and optionally `MMOS_LLM_PROVIDER`, `MMOS_LLM_MODEL`,
+`MMOS_LLM_BASE_URL`). Never commit `.env`.
+
+Check the environment:
+
+```bash
+uv run mmos doctor
+```
+
+## CLI
+
+```bash
+uv run mmos --version
+uv run mmos doctor
+```
+
+Later phases add `init`, `ingest`, `status`, `analyze-problem`, `analyze-data`,
+`research`, `propose-models`, `prototype`, `tournament`, `validate`, `freeze-evidence`,
+`paper`, `redteam`, `release`, and `run`.
+
+## Concepts
+
+- **Agent** — an LLM-backed role with a typed input and a typed output (for example a
+  problem analyst that produces a `ProblemSpec`). Agents propose; they do not certify.
+- **Skill** — reusable domain knowledge or procedure loaded into an agent's context.
+- **Workflow** — the Snakemake DAG that performs the real computation. Formal results
+  must be produced by the workflow, not by an agent running a notebook by hand.
+- **Experiment** — one fully specified, reproducible run: data hash, split, model,
+  parameters, seed, metrics, artifacts. Tracked in MLflow.
+- **Evidence** — a verified artifact or number with a provenance record. The paper layer
+  may only read from verified evidence.
+
+## Repository layout
+
+```text
+src/mmos/          package code (cli, config, core, schemas, ...)
+tests/             pytest suite
+docs/              architecture and phase reports
+projects/          runtime project data (git-ignored)
+configs/           reusable configuration
+workflow/          Snakemake workflows (Phase 7)
+model_registry/    model capability registry
+skills/            agent skills
+templates/         report/paper templates
+```
+
+A runtime project looks like:
+
+```text
+projects/<project_id>/
+├── problem/       题目原文（只读）
+├── rules/         比赛规则（只读）
+├── data/raw/      原始数据（只读，永不自动覆盖）
+├── data/interim/  中间数据
+├── data/processed/
+├── data/features/
+├── experiments/   实验配置与输出
+├── artifacts/     产物
+├── verified/      经过验证的证据
+├── reviews/       审稿与复核
+├── paper/         论文草稿
+├── logs/
+└── manifests/
+```
+
+## Development
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run pyright
+```
+
+## Common problems
+
+- **`uv sync` fails** — confirm `uv --version` works and the network allows PyPI access.
+- **`mmos` command not found** — use `uv run mmos ...` or activate `.venv`.
+- **Python version mismatch** — `.python-version` pins 3.12 for the scientific stack;
+  let uv manage the interpreter rather than changing the system Python.
+
+## Design documents
+
+- `docs/architecture.md` — control plane, compute plane, evidence plane, and paper layer.

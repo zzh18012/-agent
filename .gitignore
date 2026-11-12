@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.pyright/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# MathModelingOS runtime data
+logs/
+scratch/
+projects/*
+!projects/.gitkeep
