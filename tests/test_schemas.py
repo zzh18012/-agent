@@ -55,3 +55,23 @@ def test_project_config_defaults_to_init_state() -> None:
     config = ProjectConfig(project_id="p-1", name="demo", created_at=NOW)
     assert config.state is ProjectState.INIT
     assert config.schema_version == 1
+
+
+def test_escape_state_requires_resume_state() -> None:
+    with pytest.raises(ValidationError):
+        ProjectConfig(
+            project_id="p-1",
+            name="demo",
+            created_at=NOW,
+            state=ProjectState.REQUIRES_HUMAN_REVIEW,
+        )
+
+
+def test_working_state_may_not_carry_resume_state() -> None:
+    with pytest.raises(ValidationError):
+        ProjectConfig(
+            project_id="p-1",
+            name="demo",
+            created_at=NOW,
+            resume_state=ProjectState.INIT,
+        )

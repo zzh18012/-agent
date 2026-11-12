@@ -21,7 +21,7 @@ This repository is under phased construction. See `docs/progress/` for what is r
 | --- | --- | --- |
 | 0 | Environment and repository inspection | done |
 | 1 | Project skeleton, configuration, schemas, logging, CLI, tests | done |
-| 2 | Project intake, manifest hashing, state machine, orchestrator | planned |
+| 2 | Project intake, manifest hashing, state machine, orchestrator | done |
 | 3+ | Agents, data subsystem, model council, experiments, evidence, paper | planned |
 
 Nothing in the README should be read as a claim that later phases are implemented.
@@ -63,9 +63,19 @@ uv run mmos doctor
 ```bash
 uv run mmos --version
 uv run mmos doctor
+
+# create a project under projects/
+uv run mmos init "My First Project"
+
+# ingest inputs; originals are copied into the project, never modified
+uv run mmos ingest <project_id> ./problem.pdf --role problem
+uv run mmos ingest <project_id> ./train.csv --role data
+
+# inspect state, inputs, and legal next states
+uv run mmos status <project_id>
 ```
 
-Later phases add `init`, `ingest`, `status`, `analyze-problem`, `analyze-data`,
+Later phases add `analyze-problem`, `analyze-data`,
 `research`, `propose-models`, `prototype`, `tournament`, `validate`, `freeze-evidence`,
 `paper`, `redteam`, `release`, and `run`.
 

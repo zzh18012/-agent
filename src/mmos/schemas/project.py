@@ -2,10 +2,10 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from mmos.schemas.common import MMOSModel
-from mmos.schemas.states import ProjectState
+from mmos.schemas.states import ESCAPE_STATES, ProjectState
 
 
 class SourceRole(StrEnum):
@@ -35,6 +35,16 @@ class ProjectConfig(MMOSModel):
     name: str
     created_at: datetime
     state: ProjectState = ProjectState.INIT
+    resume_state: ProjectState | None = None
+
+    @model_validator(mode="after")
+    def _resume_state_is_consistent(self) -> "ProjectConfig":
+        if self.state in ESCAPE_STATES:
+            if self.resume_state is None or self.resume_state in ESCAPE_STATES:
+                raise ValueError("escape states need a resume_state outside the escape states")
+        elif self.resume_state is not None:
+            raise ValueError("resume_state is only meaningful in an escape state")
+        return self
 
 
 class ProjectManifest(MMOSModel):

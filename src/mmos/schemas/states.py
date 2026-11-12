@@ -22,3 +22,8 @@ class ProjectState(StrEnum):
     BLOCKED = "BLOCKED"
     FAILED = "FAILED"
     REQUIRES_HUMAN_REVIEW = "REQUIRES_HUMAN_REVIEW"
+
+
+ESCAPE_STATES = frozenset(
+    {ProjectState.BLOCKED, ProjectState.FAILED, ProjectState.REQUIRES_HUMAN_REVIEW}
+)
