@@ -60,6 +60,22 @@ class ProjectPaths:
         return self.manifest_dir / "problem_spec.json"
 
     @property
+    def data_profile_file(self) -> Path:
+        return self.manifest_dir / "data_profile.json"
+
+    @property
+    def data_schema_file(self) -> Path:
+        return self.manifest_dir / "data_schema.json"
+
+    @property
+    def data_quality_file(self) -> Path:
+        return self.manifest_dir / "data_quality_report.json"
+
+    @property
+    def leakage_report_file(self) -> Path:
+        return self.manifest_dir / "leakage_report.json"
+
+    @property
     def raw_data_dir(self) -> Path:
         return self.root / "data" / "raw"
 
@@ -89,7 +105,7 @@ def new_project_id(name: str, now: datetime) -> str:
     return f"{_slugify(name)}-{now:%Y%m%d}-{secrets.token_hex(3)}"
 
 
-def _atomic_write_text(path: Path, text: str) -> None:
+def atomic_write_text(path: Path, text: str) -> None:
     temporary = path.with_name(path.name + ".tmp")
     temporary.write_text(text, encoding="utf-8")
     temporary.replace(path)
@@ -97,7 +113,7 @@ def _atomic_write_text(path: Path, text: str) -> None:
 
 def save_project_config(paths: ProjectPaths, config: ProjectConfig) -> None:
     payload = yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False, allow_unicode=True)
-    _atomic_write_text(paths.config_file, payload)
+    atomic_write_text(paths.config_file, payload)
 
 
 def load_project_config(paths: ProjectPaths) -> ProjectConfig:
@@ -106,7 +122,7 @@ def load_project_config(paths: ProjectPaths) -> ProjectConfig:
 
 
 def save_manifest(paths: ProjectPaths, manifest: ProjectManifest) -> None:
-    _atomic_write_text(paths.manifest_file, manifest.model_dump_json(indent=2) + "\n")
+    atomic_write_text(paths.manifest_file, manifest.model_dump_json(indent=2) + "\n")
 
 
 def load_manifest(paths: ProjectPaths) -> ProjectManifest:
@@ -114,7 +130,7 @@ def load_manifest(paths: ProjectPaths) -> ProjectManifest:
 
 
 def save_problem_spec(paths: ProjectPaths, spec: ProblemSpec) -> None:
-    _atomic_write_text(paths.problem_spec_file, spec.model_dump_json(indent=2) + "\n")
+    atomic_write_text(paths.problem_spec_file, spec.model_dump_json(indent=2) + "\n")
 
 
 def load_problem_spec(paths: ProjectPaths) -> ProblemSpec:

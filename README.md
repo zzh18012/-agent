@@ -23,6 +23,7 @@ This repository is under phased construction. See `docs/progress/` for what is r
 | 1 | Project skeleton, configuration, schemas, logging, CLI, tests | done |
 | 2 | Project intake, manifest hashing, state machine, orchestrator | done |
 | 3 | Agent runtime (PydanticAI), model factory, Problem Analyst, ProblemSpec | implemented; live API test pending an API key |
+| 4 | Data profiling (Polars), Pandera schema validation, quality/leakage gates | done (CSV only) |
 | 3+ | Agents, data subsystem, model council, experiments, evidence, paper | planned |
 
 Nothing in the README should be read as a claim that later phases are implemented.
@@ -77,6 +78,9 @@ uv run mmos status <project_id>
 
 # extract a structured ProblemSpec (requires MMOS_LLM_API_KEY)
 uv run mmos analyze-problem <project_id>
+
+# profile data and run quality/leakage gates (CSV)
+uv run mmos analyze-data <project_id> --target <target_column>
 ```
 
 Later phases add `analyze-problem`, `analyze-data`,

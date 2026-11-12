@@ -21,6 +21,7 @@ from mmos.core.project import (
     save_problem_spec,
 )
 from mmos.core.state_machine import allowed_targets
+from mmos.data import DataAgent
 from mmos.orchestration import Orchestrator
 from mmos.schemas.project import SourceRole
 from mmos.schemas.states import ProjectState
@@ -228,5 +229,93 @@ def analyze_problem(
         config = Orchestrator(paths).transition(
             ProjectState.PROBLEM_UNDERSTOOD,
             reason=f"problem analyzed ({len(spec.subproblems)} subproblems)",
+        )
+    console.print(f"State: {config.state.value}")
+
+
+@app.command(name="analyze-data")
+def analyze_data(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    target: Annotated[
+        str | None, typer.Option("--target", help="Target column to validate against.")
+    ] = None,
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Profile ingested data and run the data-quality and leakage gates."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    config = load_project_config(paths)
+    if config.state not in (ProjectState.PROBLEM_UNDERSTOOD, ProjectState.DATA_VALIDATED):
+        console.print(
+            f"Project state {config.state.value} does not allow data analysis; "
+            "expected PROBLEM_UNDERSTOOD or DATA_VALIDATED."
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        result = DataAgent(paths).analyze(target=target)
+    except (ValueError, OSError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    summary = Table(title="Data profile")
+    summary.add_column("Table")
+    summary.add_column("Rows", justify="right")
+    summary.add_column("Columns", justify="right")
+    summary.add_column("Duplicate rows", justify="right")
+    for table_profile in result.profile.tables:
+        summary.add_row(
+            table_profile.name,
+            str(table_profile.row_count),
+            str(table_profile.column_count),
+            str(table_profile.duplicate_row_count),
+        )
+    console.print(summary)
+
+    if result.quality.issues:
+        issues = Table(title="Data quality issues")
+        issues.add_column("Severity")
+        issues.add_column("Code")
+        issues.add_column("Table")
+        issues.add_column("Column")
+        issues.add_column("Message")
+        for issue in result.quality.issues:
+            issues.add_row(
+                issue.severity.value,
+                issue.code,
+                issue.table or "-",
+                issue.column or "-",
+                issue.message,
+            )
+        console.print(issues)
+
+    if result.leakage.findings:
+        findings = Table(title="Leakage findings")
+        findings.add_column("Severity")
+        findings.add_column("Code")
+        findings.add_column("Columns")
+        findings.add_column("Message")
+        for finding in result.leakage.findings:
+            findings.add_row(
+                finding.severity.value,
+                finding.code,
+                ", ".join(finding.columns) or "-",
+                finding.message,
+            )
+        console.print(findings)
+
+    console.print(f"Quality: {result.quality.status.value}")
+    console.print(f"Leakage: {result.leakage.status}")
+    console.print(f"Artifacts: {paths.manifest_dir}")
+
+    if result.quality.blocking or result.leakage.blocking:
+        console.print("Data quality gate FAILED; project was not advanced.", style="red")
+        raise typer.Exit(code=1)
+
+    if config.state is ProjectState.PROBLEM_UNDERSTOOD:
+        config = Orchestrator(paths).transition(
+            ProjectState.DATA_VALIDATED,
+            reason=f"data validated ({len(result.profile.tables)} tables)",
         )
     console.print(f"State: {config.state.value}")

@@ -14,6 +14,8 @@ dependencies = [
     "structlog>=24.4",
     "pyyaml>=6.0",
     "pydantic-ai-slim[openai]>=2.68.0",
+    "polars>=2.1.0",
+    "pandera>=0.36.0",
 ]
 
 [dependency-groups]

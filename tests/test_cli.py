@@ -3,7 +3,9 @@ from typer.testing import CliRunner
 
 from mmos import __version__
 from mmos.cli.main import app
-from mmos.core.project import ProjectPaths, load_problem_spec
+from mmos.core.project import ProjectPaths, load_problem_spec, load_project_config
+from mmos.orchestration import Orchestrator
+from mmos.schemas.states import ProjectState
 
 runner = CliRunner()
 
@@ -79,6 +81,34 @@ def test_analyze_problem_pipeline_with_test_model(tmp_path, monkeypatch) -> None
     spec = load_problem_spec(ProjectPaths(project_dir))
     assert spec.problem_id == project_id
     assert spec.subproblems[0].subproblem_id == "q1"
+
+
+def test_analyze_data_flow(tmp_path) -> None:
+    init_result = runner.invoke(app, ["init", "Data", "--projects-dir", str(tmp_path)])
+    assert init_result.exit_code == 0
+    project_dir = next(path for path in tmp_path.iterdir() if path.is_dir())
+    project_id = project_dir.name
+
+    data = tmp_path / "train.csv"
+    data.write_text("id,y,x\n1,10,1\n2,12,2\n3,14,3\n", encoding="utf-8")
+    ingest_result = runner.invoke(
+        app,
+        ["ingest", project_id, str(data), "--role", "data", "--projects-dir", str(tmp_path)],
+    )
+    assert ingest_result.exit_code == 0
+
+    paths = ProjectPaths(project_dir)
+    Orchestrator(paths).transition(ProjectState.PROBLEM_UNDERSTOOD, reason="test setup")
+
+    result = runner.invoke(
+        app,
+        ["analyze-data", project_id, "--target", "y", "--projects-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "DATA_VALIDATED" in result.output
+    assert load_project_config(paths).state is ProjectState.DATA_VALIDATED
+    assert paths.data_quality_file.exists()
 
 
 def test_init_ingest_and_status_flow(tmp_path) -> None:
