@@ -3,8 +3,16 @@ from typer.testing import CliRunner
 
 from mmos import __version__
 from mmos.cli.main import app
-from mmos.core.project import ProjectPaths, load_problem_spec, load_project_config
+from mmos.core.dataset import dataset_fingerprint
+from mmos.core.project import (
+    ProjectPaths,
+    load_manifest,
+    load_problem_spec,
+    load_project_config,
+    save_experiment_spec,
+)
 from mmos.orchestration import Orchestrator
+from mmos.schemas.experiment import ExperimentSpec
 from mmos.schemas.states import ProjectState
 
 runner = CliRunner()
@@ -109,6 +117,62 @@ def test_analyze_data_flow(tmp_path) -> None:
     assert "DATA_VALIDATED" in result.output
     assert load_project_config(paths).state is ProjectState.DATA_VALIDATED
     assert paths.data_quality_file.exists()
+
+
+def test_run_experiment_cli_dry_run(tmp_path) -> None:
+    init_result = runner.invoke(app, ["init", "Run", "--projects-dir", str(tmp_path)])
+    assert init_result.exit_code == 0
+    project_dir = next(path for path in tmp_path.iterdir() if path.is_dir())
+    project_id = project_dir.name
+
+    data = tmp_path / "train.csv"
+    data.write_text("x1,x2,y\n1,2,3\n2,3,5\n3,4,7\n", encoding="utf-8")
+    ingest_result = runner.invoke(
+        app,
+        ["ingest", project_id, str(data), "--role", "data", "--projects-dir", str(tmp_path)],
+    )
+    assert ingest_result.exit_code == 0
+
+    paths = ProjectPaths(project_dir)
+    orchestrator = Orchestrator(paths)
+    orchestrator.transition(ProjectState.PROBLEM_UNDERSTOOD, reason="test setup")
+    orchestrator.transition(ProjectState.DATA_VALIDATED, reason="test setup")
+
+    spec = ExperimentSpec(
+        experiment_id="exp-cli",
+        problem_id=project_id,
+        proposal_id="p1",
+        dataset_hash=dataset_fingerprint(load_manifest(paths)),
+        target_column="y",
+        feature_set=["x1", "x2"],
+        split_strategy="kfold",
+        validation_strategy="cross_validation",
+        n_splits=2,
+        models=["sklearn.linear_regression"],
+        metrics=["rmse"],
+        random_seed=0,
+        required_artifacts=["metrics.json"],
+        acceptance_criteria=["beat baseline"],
+        failure_criteria=["worse than baseline"],
+        compute_requirements="test",
+        expected_runtime_class="seconds",
+    )
+    save_experiment_spec(paths, spec)
+
+    result = runner.invoke(
+        app,
+        [
+            "run-experiment",
+            project_id,
+            "exp-cli",
+            "--dry-run",
+            "--projects-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Dry run" in result.output
 
 
 def test_init_ingest_and_status_flow(tmp_path) -> None:

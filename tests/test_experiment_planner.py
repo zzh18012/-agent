@@ -40,6 +40,7 @@ def test_plan_produces_reproducible_contract(registry: ModelRegistry) -> None:
     spec = planner.plan(
         make_proposal(["sklearn.ridge"]),
         dataset_hash=DATASET_HASH,
+        target_column="y",
         feature_set=["x1", "x2"],
     )
 
@@ -61,7 +62,8 @@ def test_forecasting_uses_time_series_split(registry: ModelRegistry) -> None:
     spec = planner.plan(
         make_proposal(["naive.last_value"]),
         dataset_hash=DATASET_HASH,
-        feature_set=["y"],
+        target_column="y",
+        feature_set=["lag1"],
     )
 
     assert spec.split_strategy == "rolling_origin"
@@ -73,6 +75,7 @@ def test_explicit_metrics_override_defaults(registry: ModelRegistry) -> None:
     spec = ExperimentPlanner(registry).plan(
         make_proposal(["sklearn.ridge"]),
         dataset_hash=DATASET_HASH,
+        target_column="y",
         feature_set=["x1"],
         metrics=["mae"],
     )
@@ -84,6 +87,7 @@ def test_proposal_without_registry_model_cannot_be_planned(registry: ModelRegist
         ExperimentPlanner(registry).plan(
             make_proposal([]),
             dataset_hash=DATASET_HASH,
+            target_column="y",
             feature_set=["x1"],
         )
 
@@ -93,6 +97,7 @@ def test_unknown_registry_model_is_rejected(registry: ModelRegistry) -> None:
         ExperimentPlanner(registry).plan(
             make_proposal(["not.registered"]),
             dataset_hash=DATASET_HASH,
+            target_column="y",
             feature_set=["x1"],
         )
 
@@ -102,6 +107,7 @@ def test_spec_roundtrips_through_the_project(tmp_path: Path, registry: ModelRegi
     spec = ExperimentPlanner(registry).plan(
         make_proposal(["sklearn.ridge"]),
         dataset_hash=DATASET_HASH,
+        target_column="y",
         feature_set=["x1"],
     )
 

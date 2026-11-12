@@ -15,6 +15,7 @@ from mmos.config import get_settings
 from mmos.core.project import (
     ProjectPaths,
     create_project,
+    experiment_spec_file,
     load_manifest,
     load_project_config,
     resolve_project,
@@ -22,9 +23,10 @@ from mmos.core.project import (
 )
 from mmos.core.state_machine import allowed_targets
 from mmos.data import DataAgent
+from mmos.execution import LocalExecutor
 from mmos.orchestration import Orchestrator
 from mmos.schemas.project import SourceRole
-from mmos.schemas.states import ProjectState
+from mmos.schemas.states import ESCAPE_STATES, ProjectState
 from mmos.utils.logging import configure_logging
 
 console = Console()
@@ -319,3 +321,79 @@ def analyze_data(
             reason=f"data validated ({len(result.profile.tables)} tables)",
         )
     console.print(f"State: {config.state.value}")
+
+
+_EARLY_STATES = frozenset(
+    {ProjectState.INIT, ProjectState.PROJECT_INGESTED, ProjectState.PROBLEM_UNDERSTOOD}
+)
+
+
+@app.command(name="run-experiment")
+def run_experiment_command(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    experiment_id: Annotated[str, typer.Argument(help="Planned experiment id.")],
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Record the workflow command without running it.")
+    ] = False,
+    timeout: Annotated[
+        float, typer.Option("--timeout", help="Workflow timeout in seconds.")
+    ] = 600.0,
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Execute a planned experiment through the Snakemake workflow."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    config = load_project_config(paths)
+    if config.state in _EARLY_STATES or config.state in ESCAPE_STATES:
+        console.print(
+            f"Project state {config.state.value} does not allow experiments; "
+            "validate the data first and resolve any blocking state."
+        )
+        raise typer.Exit(code=1)
+
+    spec_file = experiment_spec_file(paths, experiment_id)
+    if not spec_file.exists():
+        console.print(f"Error: experiment spec not found: {spec_file}", style="red")
+        raise typer.Exit(code=1)
+
+    snakemake = shutil.which("snakemake")
+    if snakemake is None:
+        console.print("Error: snakemake is not installed in this environment.", style="red")
+        raise typer.Exit(code=1)
+
+    workflow_file = Path("workflow/Snakefile")
+    if not workflow_file.exists():
+        console.print(f"Error: workflow file not found: {workflow_file}", style="red")
+        raise typer.Exit(code=1)
+
+    result = LocalExecutor(paths).run(
+        [
+            snakemake,
+            "-s",
+            str(workflow_file.resolve()),
+            "--cores",
+            "1",
+            "--config",
+            f"experiment_id={experiment_id}",
+        ],
+        cwd=paths.root,
+        timeout_seconds=timeout,
+        dry_run=dry_run,
+    )
+
+    console.print(f"Execution: {result.execution_id}")
+    console.print(f"Duration: {result.duration_seconds:.2f}s")
+    console.print(f"stdout: {result.stdout_path}")
+    console.print(f"stderr: {result.stderr_path}")
+
+    if dry_run:
+        console.print("Dry run: workflow was not executed.")
+        return
+    if not result.succeeded():
+        console.print(f"Workflow failed: {result.error or 'non-zero exit'}", style="red")
+        raise typer.Exit(code=result.exit_code or 1)
+
+    artifacts = paths.experiments_dir / experiment_id / "artifacts"
+    console.print(f"Metrics: {artifacts / 'metrics.json'}")
+    console.print(f"Predictions: {artifacts / 'predictions.parquet'}")

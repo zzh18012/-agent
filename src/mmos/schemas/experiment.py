@@ -1,8 +1,10 @@
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import Field
 
 from mmos.schemas.common import MMOSModel
+from mmos.schemas.registry import TaskType
 
 
 class ExperimentSpec(MMOSModel):
@@ -13,6 +15,7 @@ class ExperimentSpec(MMOSModel):
     proposal_id: str
     dataset_version: str | None = None
     dataset_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    target_column: str = Field(min_length=1)
     feature_set: list[str] = Field(min_length=1)
     split_strategy: str
     validation_strategy: str
@@ -27,3 +30,15 @@ class ExperimentSpec(MMOSModel):
     failure_criteria: list[str] = Field(min_length=1)
     compute_requirements: str
     expected_runtime_class: Literal["seconds", "minutes", "hours"]
+
+
+class ExperimentResult(MMOSModel):
+    """Cross-validated metrics produced by a real run."""
+
+    experiment_id: str
+    dataset_hash: str
+    task_type: TaskType
+    random_seed: int
+    n_splits: int
+    models: dict[str, dict[str, float]]
+    generated_at: datetime

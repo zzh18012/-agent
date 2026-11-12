@@ -1,0 +1,38 @@
+import sys
+
+PYTHON = f'"{sys.executable}"'
+EXPERIMENT = config["experiment_id"]
+EXPERIMENT_DIR = f"experiments/{EXPERIMENT}"
+ARTIFACTS = f"{EXPERIMENT_DIR}/artifacts"
+GATE = f"{ARTIFACTS}/data_gate.json"
+METRICS = f"{ARTIFACTS}/metrics.json"
+PREDICTIONS = f"{ARTIFACTS}/predictions.parquet"
+RUN_RECORD = f"{EXPERIMENT_DIR}/run_record.json"
+
+
+rule all:
+    input:
+        METRICS,
+        PREDICTIONS
+
+
+rule data_gate:
+    output:
+        GATE,
+    log:
+        f"logs/workflow/data_gate_{EXPERIMENT}.log",
+    shell:
+        f"{PYTHON} -m mmos.experiments.data_gate --project . --experiment-id {EXPERIMENT} > {{log}} 2>&1"
+
+
+rule run_experiment:
+    input:
+        GATE,
+    output:
+        METRICS,
+        PREDICTIONS,
+        RUN_RECORD,
+    log:
+        f"logs/workflow/experiment_{EXPERIMENT}.log",
+    shell:
+        f"{PYTHON} -m mmos.experiments.runner --project . --experiment-id {EXPERIMENT} > {{log}} 2>&1"

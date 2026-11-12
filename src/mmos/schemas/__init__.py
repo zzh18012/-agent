@@ -8,7 +8,7 @@ from mmos.schemas.data import (
     TableProfile,
 )
 from mmos.schemas.execution import ExecutionResult
-from mmos.schemas.experiment import ExperimentSpec
+from mmos.schemas.experiment import ExperimentResult, ExperimentSpec
 from mmos.schemas.problem import ProblemSpec, SubProblem, Variable
 from mmos.schemas.project import InputFileRecord, ProjectConfig, ProjectManifest, SourceRole
 from mmos.schemas.proposal import (
@@ -30,6 +30,7 @@ __all__ = [
     "DataSchema",
     "DatasetProfile",
     "ExecutionResult",
+    "ExperimentResult",
     "ExperimentSpec",
     "ExpertRole",
     "InputFileRecord",

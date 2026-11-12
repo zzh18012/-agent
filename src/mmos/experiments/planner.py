@@ -42,6 +42,7 @@ class ExperimentPlanner:
         proposal: ModelProposal,
         *,
         dataset_hash: str,
+        target_column: str,
         feature_set: list[str],
         metrics: list[str] | None = None,
         n_splits: int = 5,
@@ -50,6 +51,8 @@ class ExperimentPlanner:
         acceptance_criteria: list[str] | None = None,
         failure_criteria: list[str] | None = None,
     ) -> ExperimentSpec:
+        if target_column in feature_set:
+            raise ValueError(f"target column {target_column!r} must not be part of the feature set")
         if not proposal.registry_model_ids:
             raise ValueError(
                 f"proposal {proposal.proposal_id!r} names no registry model; "
@@ -73,6 +76,7 @@ class ExperimentPlanner:
             proposal_id=proposal.proposal_id,
             dataset_version=dataset_version,
             dataset_hash=dataset_hash,
+            target_column=target_column,
             feature_set=feature_set,
             split_strategy=split_strategy,
             validation_strategy=validation_strategy,

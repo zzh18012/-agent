@@ -16,6 +16,8 @@ dependencies = [
     "pydantic-ai-slim[openai]>=2.68.0",
     "polars>=2.1.0",
     "pandera>=0.36.0",
+    "scikit-learn>=1.9.1",
+    "snakemake>=9.27.1",
 ]
 
 [dependency-groups]
