@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     projects_dir: Path = Path("projects")
     logs_dir: Path = Path("logs")
     log_level: str = "INFO"
+    model_registry_file: Path = Path("model_registry/registry.yaml")
 
 
 @lru_cache(maxsize=1)

@@ -10,6 +10,7 @@ import yaml
 from mmos.schemas.experiment import ExperimentSpec
 from mmos.schemas.problem import ProblemSpec
 from mmos.schemas.project import ProjectConfig, ProjectManifest
+from mmos.schemas.tournament import TournamentResult
 
 PROJECT_SUBDIRS: tuple[str, ...] = (
     "problem",
@@ -83,6 +84,10 @@ class ProjectPaths:
     @property
     def executions_dir(self) -> Path:
         return self.log_dir / "executions"
+
+    @property
+    def tournaments_dir(self) -> Path:
+        return self.experiments_dir / "tournaments"
 
     @property
     def raw_data_dir(self) -> Path:
@@ -161,6 +166,13 @@ def load_experiment_spec(paths: ProjectPaths, experiment_id: str) -> ExperimentS
     return ExperimentSpec.model_validate_json(
         experiment_spec_file(paths, experiment_id).read_text(encoding="utf-8")
     )
+
+
+def save_tournament_result(paths: ProjectPaths, result: TournamentResult) -> Path:
+    paths.tournaments_dir.mkdir(parents=True, exist_ok=True)
+    target = paths.tournaments_dir / f"{result.tournament_id}.json"
+    atomic_write_text(target, result.model_dump_json(indent=2) + "\n")
+    return target
 
 
 def create_project(

@@ -38,6 +38,9 @@ class ExperimentResult(MMOSModel):
     experiment_id: str
     dataset_hash: str
     task_type: TaskType
+    feature_set: list[str]
+    split_strategy: str
+    validation_strategy: str
     random_seed: int
     n_splits: int
     models: dict[str, dict[str, float]]

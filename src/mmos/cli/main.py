@@ -20,11 +20,15 @@ from mmos.core.project import (
     load_project_config,
     resolve_project,
     save_problem_spec,
+    save_tournament_result,
 )
 from mmos.core.state_machine import allowed_targets
 from mmos.data import DataAgent
 from mmos.execution import LocalExecutor
+from mmos.experiments.tournament import Tournament
 from mmos.orchestration import Orchestrator
+from mmos.registries import ModelRegistry
+from mmos.schemas.experiment import ExperimentResult
 from mmos.schemas.project import SourceRole
 from mmos.schemas.states import ESCAPE_STATES, ProjectState
 from mmos.utils.logging import configure_logging
@@ -397,3 +401,78 @@ def run_experiment_command(
     artifacts = paths.experiments_dir / experiment_id / "artifacts"
     console.print(f"Metrics: {artifacts / 'metrics.json'}")
     console.print(f"Predictions: {artifacts / 'predictions.parquet'}")
+
+
+@app.command()
+def tournament(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    experiments: Annotated[list[str], typer.Argument(help="Completed experiment ids.")],
+    primary_metric: Annotated[
+        str, typer.Option("--metric", help="Primary metric used for ranking.")
+    ] = "rmse",
+    higher_is_better: Annotated[
+        bool, typer.Option("--higher-is-better", help="Rank larger metric values first.")
+    ] = False,
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Rank models from comparable experiments against a baseline."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    config = load_project_config(paths)
+    if config.state in _EARLY_STATES or config.state in ESCAPE_STATES:
+        console.print(
+            f"Project state {config.state.value} does not allow a tournament; "
+            "run experiments first and resolve any blocking state."
+        )
+        raise typer.Exit(code=1)
+
+    results: list[ExperimentResult] = []
+    for experiment_id in experiments:
+        metrics_file = paths.experiments_dir / experiment_id / "artifacts" / "metrics.json"
+        if not metrics_file.exists():
+            console.print(
+                f"Error: no metrics for experiment {experiment_id!r}: {metrics_file}",
+                style="red",
+            )
+            raise typer.Exit(code=1)
+        results.append(
+            ExperimentResult.model_validate_json(metrics_file.read_text(encoding="utf-8"))
+        )
+
+    registry_file = get_settings().model_registry_file
+    if not registry_file.exists():
+        console.print(f"Error: model registry not found: {registry_file}", style="red")
+        raise typer.Exit(code=1)
+
+    result = Tournament(ModelRegistry.load(registry_file)).run(
+        results,
+        primary_metric=primary_metric,
+        higher_is_better=higher_is_better,
+    )
+    saved_to = save_tournament_result(paths, result)
+
+    table = Table(title=f"Tournament {result.tournament_id}")
+    table.add_column("Rank", justify="right")
+    table.add_column("Model")
+    table.add_column(primary_metric, justify="right")
+    table.add_column("Status")
+    table.add_column("Reason")
+    for entry in result.entries:
+        table.add_row(
+            str(entry.rank),
+            entry.model_id,
+            f"{entry.metrics[primary_metric]:.6g}",
+            entry.status,
+            entry.reason,
+        )
+    console.print(table)
+
+    console.print(f"Selected: {result.selected_model or '-'}")
+    console.print(f"Challenger: {result.challenger_model or '-'}")
+    if result.blocked:
+        console.print("Tournament is blocked; no model was selected.", style="red")
+        for note in result.notes:
+            console.print(f"  note: {note}")
+        raise typer.Exit(code=1)
+    console.print(f"Saved: {saved_to}")

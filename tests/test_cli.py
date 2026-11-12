@@ -11,9 +11,11 @@ from mmos.core.project import (
     load_project_config,
     save_experiment_spec,
 )
+from mmos.experiments.runner import run_experiment
 from mmos.orchestration import Orchestrator
 from mmos.schemas.experiment import ExperimentSpec
 from mmos.schemas.states import ProjectState
+from tests.helpers import make_experiment_project, regression_frame
 
 runner = CliRunner()
 
@@ -173,6 +175,39 @@ def test_run_experiment_cli_dry_run(tmp_path) -> None:
 
     assert result.exit_code == 0, result.output
     assert "Dry run" in result.output
+
+
+def test_tournament_cli_selects_best_candidate(tmp_path) -> None:
+    projects_dir = tmp_path / "projects"
+    paths, spec = make_experiment_project(
+        tmp_path,
+        regression_frame(),
+        models=["sklearn.dummy_regressor", "sklearn.linear_regression"],
+        metrics=["rmse"],
+    )
+
+    orchestrator = Orchestrator(paths)
+    orchestrator.transition(ProjectState.PROJECT_INGESTED, reason="test setup")
+    orchestrator.transition(ProjectState.PROBLEM_UNDERSTOOD, reason="test setup")
+    orchestrator.transition(ProjectState.DATA_VALIDATED, reason="test setup")
+    run_experiment(paths, spec.experiment_id)
+
+    result = runner.invoke(
+        app,
+        [
+            "tournament",
+            paths.root.name,
+            spec.experiment_id,
+            "--metric",
+            "rmse",
+            "--projects-dir",
+            str(projects_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "sklearn.linear_regression" in result.output
+    assert "Selected: sklearn.linear_regression" in result.output
 
 
 def test_init_ingest_and_status_flow(tmp_path) -> None:

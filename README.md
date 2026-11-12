@@ -28,6 +28,7 @@ This repository is under phased construction. See `docs/progress/` for what is r
 | 6 | LocalExecutor with safety boundary, timeout, audited execution records | done |
 | 7 | Snakemake workflow: data gate → baseline/candidates → evaluation → artifacts | done (tabular regression/classification) |
 | 8 | MLflow ledger: per-project SQLite store, params/tags/metrics/artifacts | done |
+| 9 | Tournament: comparability checks, baseline requirement, selection + challenger | done |
 | 3+ | Agents, data subsystem, model council, experiments, evidence, paper | planned |
 
 Nothing in the README should be read as a claim that later phases are implemented.
@@ -88,6 +89,9 @@ uv run mmos analyze-data <project_id> --target <target_column>
 
 # execute a planned experiment through Snakemake (spec must exist first)
 uv run mmos run-experiment <project_id> <experiment_id> [--dry-run]
+
+# compare completed experiments against a registered baseline
+uv run mmos tournament <project_id> <experiment_id...> --metric rmse
 ```
 
 Later phases add `analyze-problem`, `analyze-data`,
