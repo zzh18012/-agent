@@ -44,3 +44,4 @@ class ModelCapability(MMOSModel):
     known_failure_modes: list[str] = Field(default_factory=list)
     documentation: str = ""
     is_baseline: bool = False
+    parsimony_rank: int = Field(default=0, ge=0)

@@ -1,6 +1,9 @@
 import math
 import secrets
 
+import polars as pl
+
+from mmos.experiments.equivalence import paired_comparison
 from mmos.registries import ModelRegistry
 from mmos.schemas.experiment import ExperimentResult
 from mmos.schemas.tournament import TournamentEntry, TournamentResult
@@ -32,6 +35,8 @@ class Tournament:
         *,
         primary_metric: str,
         higher_is_better: bool,
+        predictions: pl.DataFrame | None = None,
+        improvement_threshold: float | None = None,
     ) -> TournamentResult:
         if not results:
             raise ValueError("a tournament needs at least one experiment result")
@@ -135,6 +140,77 @@ class Tournament:
 
         selected = winners[0]
         winner_ids = {winner.model_id for winner in winners}
+        information_sets = {}
+        for result in results:
+            information_sets.update(result.information_sets)
+
+        equivalence = []
+        selection_status = "winner"
+        selected_model = selected.model_id
+        challenger_model = best_baseline.model_id
+        if predictions is not None and information_sets:
+            selected_information = information_sets.get(selected.model_id)
+            matched = [
+                entry
+                for entry in ranked_entries
+                if entry.model_id != selected.model_id
+                and entry.model_id not in baseline_ids
+                and information_sets.get(entry.model_id) is not None
+                and selected_information is not None
+                and information_sets[entry.model_id].information_set_id
+                == selected_information.information_set_id
+            ]
+            if matched:
+                matched_baseline = max(
+                    matched,
+                    key=lambda entry: (
+                        self.registry.get(entry.model_id).parsimony_rank,
+                        entry.model_id,
+                    ),
+                )
+                comparison = paired_comparison(
+                    predictions,
+                    selected.model_id,
+                    matched_baseline.model_id,
+                    candidate_information=selected_information,
+                    baseline_information=information_sets.get(matched_baseline.model_id),
+                    threshold=improvement_threshold,
+                )
+                equivalence.append(comparison)
+                if comparison.status == "equivalent":
+                    ranks = {
+                        selected.model_id: self.registry.get(selected.model_id).parsimony_rank,
+                        matched_baseline.model_id: self.registry.get(
+                            matched_baseline.model_id
+                        ).parsimony_rank,
+                    }
+                    retained = max(ranks, key=lambda model_id: (ranks[model_id], model_id))
+                    selected_model = retained
+                    challenger_model = (
+                        matched_baseline.model_id
+                        if retained == selected.model_id
+                        else selected.model_id
+                    )
+                    selection_status = "equivalent"
+                    notes.append(
+                        "candidate and matched-information model are practically "
+                        "equivalent; the more parsimonious model is retained"
+                    )
+            else:
+                selection_status = "incomparable"
+                notes.append(
+                    "no matched-information comparator is present; the primary "
+                    "comparison is against a different information set"
+                )
+            external = paired_comparison(
+                predictions,
+                selected.model_id,
+                best_baseline.model_id,
+                candidate_information=selected_information,
+                baseline_information=information_sets.get(best_baseline.model_id),
+                threshold=improvement_threshold,
+            )
+            equivalence.append(external)
         final_entries = []
         for entry in ranked_entries:
             if entry.model_id == selected.model_id:
@@ -158,15 +234,35 @@ class Tournament:
                     )
                 )
 
+        if selection_status == "equivalent":
+            equivalent_ids = {selected_model, challenger_model}
+            final_entries = [
+                entry.model_copy(
+                    update={
+                        "status": "equivalent",
+                        "reason": (
+                            f"practically equivalent; parsimony retains {selected_model}"
+                            if entry.model_id in equivalent_ids
+                            else entry.reason
+                        ),
+                    }
+                )
+                if entry.model_id in equivalent_ids
+                else entry
+                for entry in final_entries
+            ]
+
         return TournamentResult(
             tournament_id=_new_tournament_id(),
             primary_metric=primary_metric,
             higher_is_better=higher_is_better,
             dataset_hash=results[0].dataset_hash,
             entries=final_entries,
-            selected_model=selected.model_id,
-            challenger_model=best_baseline.model_id,
+            selected_model=selected_model,
+            challenger_model=challenger_model,
             blocked=False,
+            selection_status=selection_status,
+            equivalence=equivalence,
             notes=notes,
         )
 

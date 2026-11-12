@@ -148,10 +148,27 @@ def test_temporal_experiment_uses_ordered_folds_and_baselines(tmp_path: Path) ->
     assert result.target_summary.generator == "linear_demand_generator"
     assert result.target_summary.generation_seed == 20261112
     assert result.target_summary.unit_status.value == "synthetic_units"
+    assert result.evaluations["sklearn.linear_regression"].n_observations == 5
+    assert result.information_sets["naive.last_value"].information_set_id.startswith(
+        "historical_y_only"
+    )
+    assert result.information_sets["sklearn.linear_regression"].information_set_id.startswith(
+        "features:"
+    )
+    for record in result.evaluations.values():
+        assert record.sse is not None and record.sst is not None
+        assert record.target_std_population and record.target_std_population > 0
+        assert record.r2 is not None
+        identity = (record.rmse / record.target_std_population) ** 2
+        assert abs(identity - (1.0 - record.r2)) < 1e-9
+        assert len(record.mase_details) == 5
+        for detail in record.mase_details:
+            assert detail.scale_denominator > 0
+            assert detail.train_end <= detail.fold_id + 35
 
     for metrics in result.models.values():
         assert "mase" in metrics
-        assert "rmse_std_ratio" in metrics
+        assert "rmse_eval_std_ratio" in metrics
     assert (
         result.models["sklearn.linear_regression"]["rmse"]
         < result.models["naive.last_value"]["rmse"]

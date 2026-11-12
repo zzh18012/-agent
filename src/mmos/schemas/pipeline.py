@@ -18,6 +18,7 @@ class PipelineState(MMOSModel):
     time_column: str | None = None
     forecast_horizon: int | None = None
     seasonal_period: int | None = None
+    improvement_threshold: float | None = None
     experiment_id: str | None = None
     tournament_id: str | None = None
 
@@ -33,6 +34,7 @@ class ReleaseSummary(MMOSModel):
     validation: dict[str, str]
     red_team_overall: str
     red_team_blocking: bool
+    selection_status: str = "winner"
     claim_ids: list[str]
     supported_claims: int
     paper_path: str

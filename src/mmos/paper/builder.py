@@ -76,6 +76,10 @@ def build_paper(
         record = by_key.get(f"target.{name}")
         return record.display_value if record is not None else None
 
+    def evaluation_value(model_id: str, name: str) -> str:
+        record = by_key.get(f"evaluation.{model_id}.{name}")
+        return record.display_value if record is not None else "unknown"
+
     synthetic = target_value("is_synthetic") == "true"
 
     tournament = load_tournament_result(paths, tournament_id) if tournament_id is not None else None
@@ -113,6 +117,22 @@ def build_paper(
         model_order = sorted(grouped, key=lambda model: (rank.get(model, 10_000), model))
 
     def information_set(model_id: str) -> str:
+        record = by_key.get(f"information_set.{model_id}")
+        if record is not None and isinstance(record.raw_value, str):
+            try:
+                payload = json.loads(record.raw_value)
+            except ValueError:
+                payload = {}
+            if payload.get("target_history_available"):
+                return "target history only"
+            features = payload.get("feature_columns") or []
+            availability = payload.get("feature_availability") or {}
+            if features:
+                described = ", ".join(
+                    f"{name} ({availability.get(name, 'unknown')})" for name in features
+                )
+                return f"features: {described}"
+            return "constant (no inputs)"
         if model_id in TEMPORAL_BASELINES:
             return "target history only"
         if model_id == "sklearn.dummy_regressor":
@@ -178,12 +198,56 @@ def build_paper(
             else "provisional leading candidate"
         )
 
-    result_label = (
-        "best-scoring candidate in this synthetic sanity run" if synthetic else status_phrase
+    equivalent_selection = bool(
+        tournament is not None and tournament.selection_status == "equivalent"
     )
+    comparison_lines: list[str] = []
+    if tournament is not None:
+        for comparison in tournament.equivalence:
+            if (
+                comparison.relative_improvement is None
+                or comparison.ci_low is None
+                or comparison.ci_high is None
+            ):
+                continue
+            comparison_lines.append(
+                f"Paired comparison {comparison.candidate_model} vs "
+                f"{comparison.baseline_model}: relative improvement "
+                f"{comparison.relative_improvement:.4g}, bootstrap interval "
+                f"[{comparison.ci_low:.4g}, {comparison.ci_high:.4g}], "
+                f"status {comparison.status}, information-set match "
+                f"{comparison.information_set_match}, threshold {comparison.threshold}."
+            )
+    no_threshold = bool(
+        equivalent_selection
+        and tournament is not None
+        and all(
+            comparison.threshold is None
+            for comparison in tournament.equivalence
+            if comparison.information_set_match
+        )
+    )
+    matched_comparison = None
+    if tournament is not None:
+        matched_comparison = next(
+            (
+                comparison
+                for comparison in tournament.equivalence
+                if comparison.information_set_match
+            ),
+            None,
+        )
+    if equivalent_selection:
+        result_label = "practically equivalent matched-information candidate set"
+    elif synthetic:
+        result_label = "best-scoring candidate in this synthetic sanity run"
+    else:
+        result_label = status_phrase
 
     results_label = (
-        "The only fitted candidate model"
+        "The practically equivalent candidate retained by parsimony"
+        if equivalent_selection
+        else "The only fitted candidate model"
         if synthetic and len(candidate_models) == 1
         else result_label.capitalize()
     )
@@ -233,14 +297,14 @@ def build_paper(
             if unit_status_value == "synthetic_units"
             else "unknown"
         )
-    ratio_record = grouped.get(selected_name, {}).get("rmse_std_ratio")
+    ratio_record = grouped.get(selected_name, {}).get("rmse_eval_std_ratio")
     std_sentence = (
         f"The target (`{spec.target_column}`) has standard deviation {target_std} ({target_unit}). "
         if target_std is not None
         else ""
     )
     ratio_sentence = (
-        f"The reported {primary_metric} equals {ratio_record.display_value} target "
+        f"The reported {primary_metric} equals {ratio_record.display_value} evaluation-target "
         "standard deviations. "
         if ratio_record is not None
         else ""
@@ -265,8 +329,15 @@ def build_paper(
     )
     abstract = (
         f"This report is generated from {len(records)} verified evidence records for "
-        f"experiment {experiment_id}. The {result_label} is {selected_name} with "
-        f"{primary_metric} = {selected_display}. {baseline_sentence}{std_sentence}"
+        f"experiment {experiment_id}. "
+        + (
+            f"The matched-information candidates are practically equivalent; parsimony "
+            f"retains {selected_name} with {primary_metric} = {selected_display}. "
+            if equivalent_selection
+            else f"The {result_label} is {selected_name} with {primary_metric} = "
+            f"{selected_display}. "
+        )
+        + f"{baseline_sentence}{std_sentence}"
         f"{ratio_sentence}{synthetic_sentence}"
         + (
             "This is a pipeline sanity check, not a model-selection finding: the "
@@ -280,6 +351,18 @@ def build_paper(
             "target history only, so the gap partly reflects feature access, not "
             "modelling skill. "
             if spec.temporal_split is not None
+            else ""
+        )
+        + (
+            f"Matched-information comparison: relative improvement "
+            f"{matched_comparison.relative_improvement:.4g}, bootstrap interval "
+            f"[{matched_comparison.ci_low:.4g}, {matched_comparison.ci_high:.4g}], "
+            f"equivalence status {matched_comparison.status} "
+            f"(threshold {matched_comparison.threshold}). "
+            if matched_comparison is not None
+            and matched_comparison.relative_improvement is not None
+            and matched_comparison.ci_low is not None
+            and matched_comparison.ci_high is not None
             else ""
         )
         + (
@@ -398,18 +481,25 @@ def build_paper(
         PaperSection(
             heading="Metric definitions",
             blocks=[
-                "RMSE and MAE are on the original target scale. R² is the standard "
-                "coefficient of determination computed on the stacked out-of-fold "
-                "prediction vector; with very few folds it is indicative only. Per-fold "
-                "R² is omitted because a one-point test fold makes it undefined.",
+                "RMSE and MAE are on the original target scale. R² is the pooled "
+                "out-of-fold coefficient of determination computed on the stacked "
+                "evaluation vector; per-fold R² is omitted when a fold has fewer than "
+                "two test observations.",
                 "MASE uses the mean absolute error of the one-step naive forecast on each "
                 "training window as its denominator (a seasonal lag would be used only if "
                 "a seasonal period were configured).",
-                "RMSE_std_ratio divides RMSE by the full-sample target standard deviation, "
-                "not by a training-fold standard deviation.",
+                "RMSE/eval_std divides RMSE by the population standard deviation of the "
+                "evaluation target values (sqrt(SST/n)), so it is aligned with R².",
                 f"Only {evaluated_text} out-of-fold predictions support these metrics; "
-                "they are not independent, and the derived metrics and intervals share "
-                "the same small set of residuals.",
+                "they share the same small set of residuals.",
+                f"Selected evaluation set: n = "
+                f"{evaluation_value(selected_name, 'n_observations')}, "
+                f"target mean = {evaluation_value(selected_name, 'target_mean')}, "
+                f"evaluation target std (sqrt(SST/n)) = "
+                f"{evaluation_value(selected_name, 'target_std_population')}, "
+                f"SSE = {evaluation_value(selected_name, 'sse')}, "
+                f"SST = {evaluation_value(selected_name, 'sst')}, "
+                f"pooled R2 = {evaluation_value(selected_name, 'r2')}.",
             ],
         )
     )
@@ -494,6 +584,15 @@ def build_paper(
                     *[f"Note: {note}" for note in tournament.notes],
                     "Information sets differ between candidates and naive baselines; this "
                     "comparison is not a like-for-like test of modelling skill alone.",
+                    *comparison_lines,
+                    *(
+                        [
+                            "No practical improvement threshold was specified; "
+                            "equivalence is based on the interval including zero."
+                        ]
+                        if no_threshold
+                        else []
+                    ),
                 ],
             )
         )

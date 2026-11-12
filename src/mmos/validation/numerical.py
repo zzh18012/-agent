@@ -1,5 +1,6 @@
 import math
 
+import numpy as np
 import polars as pl
 from sklearn.metrics import (
     accuracy_score,
@@ -77,6 +78,74 @@ def validate_numerical(paths: ProjectPaths, experiment_id: str) -> ValidationRep
                     f"{model_id}/{name}: reported {reported}, recomputed {value}",
                 )
 
+    for model_id, evaluation in result.evaluations.items():
+        frame = predictions.filter(pl.col("model") == model_id)
+        if frame.is_empty():
+            continue
+        actual = frame["actual"].to_numpy().astype(float)
+        predicted = frame["prediction"].to_numpy().astype(float)
+        errors = predicted - actual
+        sse = float(np.sum(errors**2))
+        mean = float(np.mean(actual))
+        sst = float(np.sum((actual - mean) ** 2))
+        rmse = math.sqrt(sse / len(actual))
+        mae = float(np.mean(np.abs(errors)))
+        std_population = math.sqrt(sst / len(actual))
+        ratio = rmse / std_population if std_population > 0 else None
+        r2 = 1.0 - sse / sst if sst > 0 else None
+
+        def close(reported: float, recomputed: float) -> bool:
+            return abs(reported - recomputed) <= 1e-9 + 1e-9 * abs(recomputed)
+
+        checks = (
+            ("n_observations", evaluation.n_observations, len(actual)),
+            ("sse", evaluation.sse, sse),
+            ("sst", evaluation.sst, sst),
+            ("target_mean", evaluation.target_mean, mean),
+            ("target_std_population", evaluation.target_std_population, std_population),
+            ("rmse", evaluation.rmse, rmse),
+            ("mae", evaluation.mae, mae),
+            ("r2", evaluation.r2, r2),
+            ("rmse_eval_std_ratio", evaluation.rmse_eval_std_ratio, ratio),
+        )
+        for name, reported, recomputed in checks:
+            if reported is None or recomputed is None:
+                continue
+            if not close(float(reported), float(recomputed)):
+                error(
+                    "evaluation_component_mismatch",
+                    f"{model_id}/{name}: reported {reported}, recomputed {recomputed}",
+                )
+        if sst == 0 and evaluation.r2 is not None:
+            error("r2_should_be_undefined", f"{model_id}: R2 reported for a constant target")
+        if sst > 0 and evaluation.r2 is None:
+            error("r2_missing", f"{model_id}: R2 missing although SST > 0")
+
+        scaled_values = []
+        for detail in evaluation.mase_details:
+            if detail.scale_denominator > 0:
+                expected_scaled = detail.absolute_forecast_error / detail.scale_denominator
+                if detail.scaled_error is None or not close(detail.scaled_error, expected_scaled):
+                    error(
+                        "mase_scaled_error_mismatch",
+                        f"{model_id}/fold {detail.fold_id}: scaled error does not match "
+                        "absolute error / training denominator",
+                    )
+                else:
+                    scaled_values.append(detail.scaled_error)
+            elif detail.scaled_error is not None:
+                error(
+                    "mase_undefined_but_reported",
+                    f"{model_id}/fold {detail.fold_id}: zero denominator but scaled error",
+                )
+        if scaled_values and evaluation.mase is not None:
+            expected_mase = float(np.mean(scaled_values))
+            if not close(evaluation.mase, expected_mase):
+                error(
+                    "mase_mismatch",
+                    f"{model_id}: reported MASE {evaluation.mase}, recomputed {expected_mase}",
+                )
+
     target = result.target_summary
     if target is not None:
         series = load_single_table(paths)[target.name]
@@ -106,18 +175,23 @@ def validate_numerical(paths: ProjectPaths, experiment_id: str) -> ValidationRep
                     "target_stat_mismatch",
                     f"target {name}: reported {reported}, recomputed from data {recomputed}",
                 )
-        if target.std:
-            for model_id, metrics in result.models.items():
-                ratio = metrics.get("rmse_std_ratio")
-                rmse = metrics.get("rmse")
-                if ratio is not None and rmse is not None:
-                    expected_ratio = rmse / target.std
-                    if abs(ratio - expected_ratio) > 1e-9 + 1e-9 * abs(expected_ratio):
-                        error(
-                            "normalized_metric_mismatch",
-                            f"{model_id}/rmse_std_ratio: reported {ratio}, "
-                            f"recomputed {expected_ratio}",
-                        )
+        for model_id, metrics in result.models.items():
+            ratio = metrics.get("rmse_eval_std_ratio")
+            rmse = metrics.get("rmse")
+            evaluation = result.evaluations.get(model_id)
+            if (
+                ratio is not None
+                and rmse is not None
+                and evaluation is not None
+                and evaluation.target_std_population
+            ):
+                expected_ratio = rmse / evaluation.target_std_population
+                if abs(ratio - expected_ratio) > 1e-9 + 1e-9 * abs(expected_ratio):
+                    error(
+                        "normalized_metric_mismatch",
+                        f"{model_id}/rmse_eval_std_ratio: reported {ratio}, "
+                        f"recomputed {expected_ratio}",
+                    )
 
     return build_report(
         "numerical",

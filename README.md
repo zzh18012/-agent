@@ -34,7 +34,8 @@ This repository is under phased construction. See `docs/progress/` for what is r
 | 12 | Paper AST, evidence-grounded tables/figures, Markdown renderer | done |
 | 13 | Red Team attack, author response, judge verdict with conservative aggregation | done (live-verified) |
 | 14 | Automated `mmos run` pipeline, release gate, blocked-release handoff | implemented |
-| 15 | Scientific hardening: target/temporal metadata, rolling-origin validation, naive baselines, MASE, uncertainty | implemented; final demo correctly held at REQUIRES_HUMAN_REVIEW (judge=revise) |
+| 15 | Scientific hardening: target/temporal metadata, rolling-origin validation, naive baselines, MASE, uncertainty | implemented; demo required revision before release |
+| 16 | EvaluationSet components, MASE fold semantics, information sets, practical equivalence | done; demo released with judge PASS |
 
 Nothing in the README should be read as a claim that later phases are implemented.
 

@@ -31,14 +31,18 @@ from mmos.experiments.engines import (
     is_stochastic,
     task_type_for,
 )
+from mmos.experiments.evaluation import metrics_from_evaluation, regression_evaluation
 from mmos.experiments.metrics import compute_metrics, regression_metrics
 from mmos.schemas.experiment import (
+    EvaluationRecord,
     ExperimentResult,
     ExperimentSpec,
     FoldWindow,
+    MaseFoldDetail,
     MetricSummary,
     TargetSummary,
 )
+from mmos.schemas.metadata import DatasetMetadata, InformationSet
 from mmos.schemas.registry import TaskType
 from mmos.tracking import log_experiment_run
 
@@ -88,38 +92,58 @@ def _summarize_metric(
     )
 
 
-def _mase(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
+def _mase_fold_detail(
+    fold_id: int,
+    window: FoldWindow,
     y_train: np.ndarray,
+    y_test: np.ndarray,
+    predictions: np.ndarray,
     seasonal_period: int | None,
-) -> float | None:
+) -> MaseFoldDetail:
     lag = seasonal_period if seasonal_period is not None else 1
+    absolute_error = float(np.mean(np.abs(y_test - predictions)))
     if len(y_train) <= lag:
-        return None
-    scale = float(np.mean(np.abs(y_train[lag:] - y_train[:-lag])))
-    if scale == 0:
-        return None
-    return float(np.mean(np.abs(y_true - y_pred)) / scale)
+        return MaseFoldDetail(
+            fold_id=fold_id,
+            train_start=window.train_start,
+            train_end=window.train_end,
+            scale_lag=lag,
+            scale_denominator=0.0,
+            absolute_forecast_error=absolute_error,
+            scaled_error=None,
+            status="undefined: insufficient training history for scale_lag",
+        )
+    denominator = float(np.mean(np.abs(y_train[lag:] - y_train[:-lag])))
+    if denominator == 0:
+        return MaseFoldDetail(
+            fold_id=fold_id,
+            train_start=window.train_start,
+            train_end=window.train_end,
+            scale_lag=lag,
+            scale_denominator=0.0,
+            absolute_forecast_error=absolute_error,
+            scaled_error=None,
+            status="undefined: zero naive scaling error",
+        )
+    return MaseFoldDetail(
+        fold_id=fold_id,
+        train_start=window.train_start,
+        train_end=window.train_end,
+        scale_lag=lag,
+        scale_denominator=denominator,
+        absolute_forecast_error=absolute_error,
+        scaled_error=absolute_error / denominator,
+        status="defined",
+    )
 
 
 def _regression_fold_metrics(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    requested: list[str],
-    y_train: np.ndarray,
-    seasonal_period: int | None,
+    y_true: np.ndarray, y_pred: np.ndarray, requested: list[str]
 ) -> dict[str, float]:
     base = [metric for metric in requested if metric in _REGRESSION_METRICS]
     if len(y_true) < 2:
-        # R^2 is undefined for a single test point; report it at the aggregate level only.
         base = [metric for metric in base if metric != "r2"]
-    scores = regression_metrics(y_true, y_pred, base) if base else {}
-    if "mase" in requested:
-        mase = _mase(y_true, y_pred, y_train, seasonal_period)
-        if mase is not None:
-            scores["mase"] = mase
-    return scores
+    return regression_metrics(y_true, y_pred, base) if base else {}
 
 
 def _temporal_windows(n_rows: int, spec: ExperimentSpec) -> list[FoldWindow]:
@@ -147,6 +171,67 @@ def _temporal_windows(n_rows: int, spec: ExperimentSpec) -> list[FoldWindow]:
     return windows
 
 
+def _information_sets(
+    spec: ExperimentSpec, metadata: DatasetMetadata | None
+) -> dict[str, InformationSet]:
+    availability = (
+        {feature.name: feature.availability.value for feature in metadata.features}
+        if metadata is not None
+        else {}
+    )
+    horizon = spec.temporal_split.horizon if spec.temporal_split is not None else 0
+    information_sets: dict[str, InformationSet] = {}
+    for model_id in spec.models:
+        if model_id in TEMPORAL_BASELINES:
+            information_sets[model_id] = InformationSet(
+                information_set_id=f"historical_y_only_h{horizon}",
+                target_history_available=True,
+                forecast_horizon=horizon,
+                lookback_policy="expanding" if horizon else "unknown",
+            )
+        elif model_id == "sklearn.dummy_regressor":
+            information_sets[model_id] = InformationSet(
+                information_set_id="constant",
+                target_history_available=False,
+                forecast_horizon=horizon,
+                lookback_policy="none",
+            )
+        else:
+            feature_availability = {
+                feature: availability.get(feature, "unknown") for feature in spec.feature_set
+            }
+            identifier = (
+                "features:"
+                + ",".join(sorted(spec.feature_set))
+                + "|"
+                + ",".join(
+                    f"{name}={status}" for name, status in sorted(feature_availability.items())
+                )
+            )
+            information_sets[model_id] = InformationSet(
+                information_set_id=identifier,
+                target_history_available=False,
+                feature_columns=list(spec.feature_set),
+                feature_availability=feature_availability,
+                forecast_horizon=horizon,
+                lookback_policy="none",
+            )
+    return information_sets
+
+
+def _summaries_from_folds(
+    metrics: dict[str, float], fold_scores: list[dict[str, float]]
+) -> dict[str, MetricSummary]:
+    return {
+        metric_name: _summarize_metric(
+            metric_name,
+            value,
+            [fold[metric_name] for fold in fold_scores if metric_name in fold],
+        )
+        for metric_name, value in metrics.items()
+    }
+
+
 def _run_temporal(
     spec: ExperimentSpec,
     df: pl.DataFrame,
@@ -158,6 +243,7 @@ def _run_temporal(
     list[FoldWindow],
     list[dict[str, object]],
     dict[str, bool],
+    dict[str, EvaluationRecord],
 ]:
     if spec.time_column is None or spec.time_column not in df.columns:
         raise ValueError("time_column is missing from the data")
@@ -167,34 +253,43 @@ def _run_temporal(
         raise ValueError("time column contains nulls")
     if time_values.n_unique() != df.height:
         raise ValueError("time column must be unique")
-    y = df[spec.target_column].to_numpy()
-    if not np.issubdtype(y.dtype, np.number):
-        raise ValueError("temporal evaluation requires a numeric target")
-    x = df.select(spec.feature_set).to_numpy() if spec.feature_set else None
     missing = [column for column in spec.feature_set if column not in df.columns]
     if missing:
         raise ValueError(f"missing columns in data: {', '.join(missing)}")
+    y = df[spec.target_column].to_numpy()
+    if not np.issubdtype(y.dtype, np.number):
+        raise ValueError("temporal evaluation requires a numeric target")
     if df[spec.target_column].null_count() > 0:
         raise ValueError("null target values; cleaning must be an explicit step")
+    x = df.select(spec.feature_set).to_numpy() if spec.feature_set else None
 
     split = spec.temporal_split
     if split is None:
         raise ValueError("temporal experiment is missing a temporal split")
     windows = _temporal_windows(df.height, spec)
+    evaluated_indices = np.concatenate(
+        [np.arange(window.test_start, window.test_end) for window in windows]
+    )
+    y_eval = y[evaluated_indices]
+
     metrics_by_model: dict[str, dict[str, float]] = {}
     fold_metrics_by_model: dict[str, list[dict[str, float]]] = {}
     summaries_by_model: dict[str, dict[str, MetricSummary]] = {}
+    evaluations: dict[str, EvaluationRecord] = {}
     prediction_rows: list[dict[str, object]] = []
     determinism: dict[str, bool] = {}
 
     for model_id in spec.models:
-        oof_pred = np.full(len(y), np.nan)
         fold_scores: list[dict[str, float]] = []
-        for window in windows:
+        mase_details: list[MaseFoldDetail] = []
+        predictions = np.empty(len(evaluated_indices), dtype=float)
+        position = 0
+
+        for fold_index, window in enumerate(windows):
             y_train = y[window.train_start : window.train_end]
             y_test = y[window.test_start : window.test_end]
             if model_id in TEMPORAL_BASELINES:
-                predictions = forecast_baseline(
+                fold_pred = forecast_baseline(
                     model_id, y_train, split.horizon, spec.seasonal_period
                 )
             else:
@@ -202,43 +297,38 @@ def _run_temporal(
                     raise ValueError(f"model {model_id!r} requires at least one feature column")
                 estimator = build_estimator(model_id, random_state=spec.random_seed)
                 estimator.fit(x[window.train_start : window.train_end], y_train)
-                predictions = estimator.predict(x[window.test_start : window.test_end])
-            oof_pred[window.test_start : window.test_end] = predictions
-            fold_scores.append(
-                _regression_fold_metrics(
-                    y_test, predictions, spec.metrics, y_train, spec.seasonal_period
-                )
+                fold_pred = estimator.predict(x[window.test_start : window.test_end])
+
+            count = window.test_end - window.test_start
+            predictions[position : position + count] = fold_pred
+            position += count
+
+            detail = _mase_fold_detail(
+                fold_index, window, y_train, y_test, fold_pred, spec.seasonal_period
             )
+            mase_details.append(detail)
+            scores = _regression_fold_metrics(y_test, fold_pred, spec.metrics)
+            if detail.scaled_error is not None:
+                scores["mase"] = detail.scaled_error
+            fold_scores.append(scores)
 
-        tested = ~np.isnan(oof_pred)
-        if not tested.any():
-            raise RuntimeError(f"no out-of-fold predictions for {model_id}")
-        base_metrics = [metric for metric in spec.metrics if metric in _REGRESSION_METRICS]
-        aggregate = regression_metrics(y[tested], oof_pred[tested], base_metrics)
-        if "mase" in spec.metrics:
-            mase_values = [fold["mase"] for fold in fold_scores if "mase" in fold]
-            if mase_values:
-                aggregate["mase"] = float(np.mean(mase_values))
-        target_std = target_summary.std
-        if "rmse" in aggregate and target_std:
-            aggregate["rmse_std_ratio"] = aggregate["rmse"] / target_std
-
-        metrics_by_model[model_id] = aggregate
+        record = regression_evaluation(model_id, y_eval, predictions, mase_details=mase_details)
+        evaluations[model_id] = record
+        metrics_by_model[model_id] = metrics_from_evaluation(record)
         fold_metrics_by_model[model_id] = fold_scores
-        summaries: dict[str, MetricSummary] = {}
-        for metric_name, point in aggregate.items():
-            fold_values = [fold[metric_name] for fold in fold_scores if metric_name in fold]
-            summaries[metric_name] = _summarize_metric(metric_name, point, fold_values)
-        summaries_by_model[model_id] = summaries
+        summaries_by_model[model_id] = _summaries_from_folds(
+            metrics_by_model[model_id], fold_scores
+        )
         determinism[model_id] = not is_stochastic(model_id)
-
-        for index in np.flatnonzero(tested):
+        for row_index, prediction, actual in zip(
+            evaluated_indices, predictions, y_eval, strict=True
+        ):
             prediction_rows.append(
                 {
-                    "row_index": int(index),
+                    "row_index": int(row_index),
                     "model": model_id,
-                    "prediction": oof_pred[index].item(),
-                    "actual": y[index].item(),
+                    "prediction": float(prediction),
+                    "actual": float(actual),
                 }
             )
 
@@ -249,6 +339,7 @@ def _run_temporal(
         windows,
         prediction_rows,
         determinism,
+        evaluations,
     )
 
 
@@ -262,6 +353,7 @@ def _run_standard(
     dict[str, dict[str, MetricSummary]],
     list[dict[str, object]],
     dict[str, bool],
+    dict[str, EvaluationRecord],
 ]:
     required = [*spec.feature_set, spec.target_column]
     missing = [column for column in required if column not in df.columns]
@@ -275,7 +367,6 @@ def _run_standard(
         raise ValueError(
             "null values in features or target; cleaning must be an explicit, recorded step"
         )
-
     x = features.to_numpy()
     y = df[spec.target_column].to_numpy()
     task_type = task_type_for(spec.models[0])
@@ -306,6 +397,7 @@ def _run_standard(
     metrics_by_model: dict[str, dict[str, float]] = {}
     fold_metrics_by_model: dict[str, list[dict[str, float]]] = {}
     summaries_by_model: dict[str, dict[str, MetricSummary]] = {}
+    evaluations: dict[str, EvaluationRecord] = {}
     prediction_rows: list[dict[str, object]] = []
     determinism: dict[str, bool] = {}
     fold_metric_names = [name for name in spec.metrics if name != "roc_auc"]
@@ -323,7 +415,6 @@ def _run_standard(
             fold_scores.append(
                 compute_metrics(task_type, y[test_index], fold_pred, None, fold_metric_names)
             )
-
             if oof_proba is not None:
                 fold_proba = estimator.predict_proba(x[test_index])
                 for column_index, class_value in enumerate(estimator.classes_):
@@ -336,21 +427,21 @@ def _run_standard(
         if oof_proba is not None and np.isnan(oof_proba).any():
             raise RuntimeError(f"incomplete out-of-fold probabilities for {model_id}")
 
-        aggregate = compute_metrics(task_type, y, oof_pred, oof_proba, spec.metrics)
         if task_type is TaskType.REGRESSION:
-            target_std = target_summary.std
-            if "rmse" in aggregate and target_std:
-                aggregate["rmse_std_ratio"] = aggregate["rmse"] / target_std
-        metrics_by_model[model_id] = aggregate
-        fold_metrics_by_model[model_id] = fold_scores
-        summaries_by_model[model_id] = {
-            metric_name: _summarize_metric(
-                metric_name,
-                value,
-                [fold[metric_name] for fold in fold_scores if metric_name in fold],
+            record = regression_evaluation(model_id, y, oof_pred)
+            evaluations[model_id] = record
+            metrics_by_model[model_id] = metrics_from_evaluation(record)
+            summaries_by_model[model_id] = _summaries_from_folds(
+                metrics_by_model[model_id], fold_scores
             )
-            for metric_name, value in aggregate.items()
-        }
+        else:
+            metrics_by_model[model_id] = compute_metrics(
+                task_type, y, oof_pred, oof_proba, spec.metrics
+            )
+            summaries_by_model[model_id] = _summaries_from_folds(
+                metrics_by_model[model_id], fold_scores
+            )
+        fold_metrics_by_model[model_id] = fold_scores
         determinism[model_id] = not is_stochastic(model_id)
         prediction_rows.extend(
             {
@@ -368,6 +459,7 @@ def _run_standard(
         summaries_by_model,
         prediction_rows,
         determinism,
+        evaluations,
     )
 
 
@@ -404,6 +496,7 @@ def run_experiment(paths: ProjectPaths, experiment_id: str) -> ExperimentResult:
             fold_windows,
             prediction_rows,
             determinism,
+            evaluations,
         ) = _run_temporal(spec, df, target_summary)
         task_type = TaskType.FORECASTING
         evaluated_rows = sum(window.test_end - window.test_start for window in fold_windows)
@@ -414,6 +507,7 @@ def run_experiment(paths: ProjectPaths, experiment_id: str) -> ExperimentResult:
             metric_summaries,
             prediction_rows,
             determinism,
+            evaluations,
         ) = _run_standard(spec, df, target_summary)
         fold_windows = []
         task_type = task_type_for(spec.models[0])
@@ -437,6 +531,8 @@ def run_experiment(paths: ProjectPaths, experiment_id: str) -> ExperimentResult:
         feature_availability=feature_availability,
         dataset_metadata_sha256=metadata_record.sha256 if metadata_record else None,
         evaluated_rows=evaluated_rows,
+        evaluations=evaluations,
+        information_sets=_information_sets(spec, metadata),
         generated_at=datetime.now(UTC).replace(microsecond=0),
     )
 

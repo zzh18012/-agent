@@ -9,6 +9,7 @@ from mmos.core.project import (
     atomic_write_text,
     experiment_spec_file,
     load_experiment_spec,
+    load_tournament_result,
     sha256_file,
 )
 from mmos.schemas.common import MMOSModel
@@ -77,7 +78,9 @@ def load_claims(paths: ProjectPaths) -> list[ClaimRecord]:
     return _ClaimFile.model_validate(data).claims
 
 
-def freeze_experiment(paths: ProjectPaths, experiment_id: str) -> list[EvidenceRecord]:
+def freeze_experiment(
+    paths: ProjectPaths, experiment_id: str, *, tournament_id: str | None = None
+) -> list[EvidenceRecord]:
     reports, report_hashes = _load_passing_reports(paths, experiment_id)
 
     experiment_dir = paths.experiment_dir(experiment_id)
@@ -251,6 +254,100 @@ def freeze_experiment(paths: ProjectPaths, experiment_id: str) -> list[EvidenceR
                 f"model_determinism.{model_id}",
             )
         )
+
+    for model_id, evaluation in result.evaluations.items():
+        for field in (
+            "n_observations",
+            "sse",
+            "sst",
+            "r2",
+            "r2_reason",
+            "target_mean",
+            "target_std_population",
+            "rmse",
+            "mae",
+            "rmse_eval_std_ratio",
+            "mase",
+        ):
+            value = getattr(evaluation, field)
+            if value is None:
+                continue
+            records.append(
+                extra_record(
+                    f"ev-{experiment_id}-evaluation-{model_id}-{field}",
+                    f"evaluation.{model_id}.{field}",
+                    value,
+                    display(value),
+                    f"evaluations.{model_id}.{field}",
+                )
+            )
+        if evaluation.mase_details:
+            details = json.dumps(
+                [detail.model_dump(mode="json") for detail in evaluation.mase_details],
+                sort_keys=True,
+            )
+            records.append(
+                extra_record(
+                    f"ev-{experiment_id}-evaluation-{model_id}-mase-details",
+                    f"evaluation.{model_id}.mase_details",
+                    details,
+                    details,
+                    f"evaluations.{model_id}.mase_details",
+                )
+            )
+
+    for model_id, information_set in result.information_sets.items():
+        payload = information_set.model_dump_json()
+        records.append(
+            extra_record(
+                f"ev-{experiment_id}-information-set-{model_id}",
+                f"information_set.{model_id}",
+                payload,
+                payload,
+                f"information_sets.{model_id}",
+            )
+        )
+
+    if tournament_id is not None:
+        tournament = load_tournament_result(paths, tournament_id)
+        for field, value in (
+            ("status", tournament.selection_status),
+            ("selected_model", tournament.selected_model or ""),
+            ("challenger_model", tournament.challenger_model or ""),
+        ):
+            records.append(
+                extra_record(
+                    f"ev-{experiment_id}-selection-{field}",
+                    f"selection.{field}",
+                    value,
+                    value,
+                    f"tournament.{field}",
+                )
+            )
+        for comparison in tournament.equivalence:
+            prefix = f"comparison.{comparison.candidate_model}_vs_{comparison.baseline_model}"
+            for field in (
+                "status",
+                "information_set_match",
+                "relative_improvement",
+                "ci_low",
+                "ci_high",
+                "threshold",
+                "n_pairs",
+            ):
+                value = getattr(comparison, field)
+                if value is None:
+                    continue
+                raw = str(value).lower() if isinstance(value, bool) else value
+                records.append(
+                    extra_record(
+                        f"ev-{experiment_id}-{prefix}-{field}",
+                        f"{prefix}.{field}",
+                        raw,
+                        display(raw),
+                        f"equivalence.{field}",
+                    )
+                )
 
     records.append(
         extra_record(

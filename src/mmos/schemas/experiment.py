@@ -4,7 +4,7 @@ from typing import Any, Literal
 from pydantic import Field, model_validator
 
 from mmos.schemas.common import MMOSModel
-from mmos.schemas.metadata import TargetSummary
+from mmos.schemas.metadata import InformationSet, TargetSummary
 from mmos.schemas.registry import TaskType
 
 
@@ -33,6 +33,33 @@ class FoldWindow(MMOSModel):
         if not (self.train_start < self.train_end <= self.test_start < self.test_end):
             raise ValueError("fold must satisfy train_start < train_end <= test_start < test_end")
         return self
+
+
+class MaseFoldDetail(MMOSModel):
+    fold_id: int
+    train_start: int
+    train_end: int
+    scale_lag: int
+    scale_denominator: float
+    absolute_forecast_error: float
+    scaled_error: float | None = None
+    status: str = "defined"
+
+
+class EvaluationRecord(MMOSModel):
+    model_id: str
+    n_observations: int
+    sse: float | None = None
+    sst: float | None = None
+    r2: float | None = None
+    r2_reason: str | None = None
+    target_mean: float | None = None
+    target_std_population: float | None = None
+    rmse: float | None = None
+    mae: float | None = None
+    rmse_eval_std_ratio: float | None = None
+    mase: float | None = None
+    mase_details: list[MaseFoldDetail] = Field(default_factory=list)
 
 
 class MetricSummary(MMOSModel):
@@ -98,4 +125,6 @@ class ExperimentResult(MMOSModel):
     feature_availability: dict[str, str] = Field(default_factory=dict)
     dataset_metadata_sha256: str | None = None
     evaluated_rows: int = 0
+    evaluations: dict[str, EvaluationRecord] = Field(default_factory=dict)
+    information_sets: dict[str, "InformationSet"] = Field(default_factory=dict)
     generated_at: datetime

@@ -5,6 +5,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Annotated
 
+import polars as pl
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -401,6 +402,13 @@ def tournament(
     higher_is_better: Annotated[
         bool, typer.Option("--higher-is-better", help="Rank larger metric values first.")
     ] = False,
+    improvement_threshold: Annotated[
+        float | None,
+        typer.Option(
+            "--improvement-threshold",
+            help="Relative improvement required for practical difference.",
+        ),
+    ] = None,
     projects_dir: Annotated[
         Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
     ] = None,
@@ -433,10 +441,19 @@ def tournament(
         console.print(f"Error: model registry not found: {registry_file}", style="red")
         raise typer.Exit(code=1)
 
+    predictions = None
+    if len(experiments) == 1:
+        prediction_file = (
+            paths.experiments_dir / experiments[0] / "artifacts" / "predictions.parquet"
+        )
+        if prediction_file.exists():
+            predictions = pl.read_parquet(prediction_file)
     result = Tournament(ModelRegistry.load(registry_file)).run(
         results,
         primary_metric=primary_metric,
         higher_is_better=higher_is_better,
+        predictions=predictions,
+        improvement_threshold=improvement_threshold,
     )
     saved_to = save_tournament_result(paths, result)
 
@@ -456,8 +473,15 @@ def tournament(
         )
     console.print(table)
 
+    console.print(f"Selection status: {result.selection_status}")
     console.print(f"Selected: {result.selected_model or '-'}")
-    console.print(f"Challenger: {result.challenger_model or '-'}")
+    console.print(f"Reference: {result.challenger_model or '-'}")
+    for comparison in result.equivalence:
+        console.print(
+            f"  {comparison.candidate_model} vs {comparison.baseline_model}: "
+            f"status={comparison.status}, relative improvement={comparison.relative_improvement}, "
+            f"CI=[{comparison.ci_low}, {comparison.ci_high}]"
+        )
     if result.blocked:
         console.print("Tournament is blocked; no model was selected.", style="red")
         for note in result.notes:
@@ -950,6 +974,13 @@ def run(
         int | None,
         typer.Option("--seasonal-period", help="Confirmed seasonal period, if any."),
     ] = None,
+    improvement_threshold: Annotated[
+        float | None,
+        typer.Option(
+            "--improvement-threshold",
+            help="Relative improvement required for practical difference.",
+        ),
+    ] = None,
     timeout: Annotated[
         float, typer.Option("--timeout", help="Workflow timeout in seconds.")
     ] = 900.0,
@@ -971,6 +1002,7 @@ def run(
         time_column=time_column,
         forecast_horizon=forecast_horizon,
         seasonal_period=seasonal_period,
+        improvement_threshold=improvement_threshold,
     )
 
     try:

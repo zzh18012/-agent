@@ -1,199 +1,263 @@
 models:
-  - model_id: sklearn.dummy_regressor
-    name: Dummy regressor (mean baseline)
-    task_types: [regression]
-    description: Predicts the training mean. The minimum baseline any regression model must beat.
-    required_packages: [scikit-learn]
-    interpretability: low
-    compute_class: tiny
-    recommended_validation: k-fold cross-validation with the same split as candidates
-    known_failure_modes: [ignores all features, unusable as a real model]
-    documentation: https://scikit-learn.org/stable/modules/generated/sklearn.dummy.DummyRegressor.html
-    is_baseline: true
-
-  - model_id: sklearn.linear_regression
-    name: Ordinary least squares
-    task_types: [regression]
-    description: Linear model fitted by minimizing squared error. Transparent and fast.
-    required_packages: [scikit-learn]
-    interpretability: high
-    compute_class: tiny
-    recommended_validation: k-fold cross-validation; inspect residual structure
-    known_failure_modes:
-      - sensitive to outliers
-      - cannot capture nonlinear relationships
-      - unstable under multicollinearity
-    documentation: https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LinearRegression.html
-
-  - model_id: sklearn.ridge
-    name: Ridge regression
-    task_types: [regression]
-    description: Linear model with L2 regularization; stabilizes collinear features.
-    required_packages: [scikit-learn]
-    interpretability: high
-    compute_class: tiny
-    recommended_validation: k-fold cross-validation; tune alpha
-    known_failure_modes: [biased under strong nonlinearity, alpha selection overfit if tuned on test data]
-    documentation: https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.Ridge.html
-
-  - model_id: sklearn.random_forest_regressor
-    name: Random forest regressor
-    task_types: [regression]
-    description: Bagged decision trees; captures nonlinearity and interactions.
-    required_packages: [scikit-learn]
-    interpretability: medium
-    compute_class: small
-    recommended_validation: k-fold cross-validation; compare with a linear baseline
-    known_failure_modes:
-      - extrapolates poorly outside the training range
-      - high memory for deep forests
-      - biased toward high-cardinality features in impurity importance
-    documentation: https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestRegressor.html
-
-  - model_id: sklearn.hist_gradient_boosting_regressor
-    name: Histogram gradient boosting regressor
-    task_types: [regression]
-    description: Boosted trees with histogram binning; strong tabular performer.
-    required_packages: [scikit-learn]
-    interpretability: low
-    compute_class: small
-    recommended_validation: k-fold cross-validation; early stopping on a validation fold
-    known_failure_modes: [overfits small data without regularization, extrapolates poorly]
-    documentation: https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.HistGradientBoostingRegressor.html
-
-  - model_id: lightgbm.regressor
-    name: LightGBM regressor
-    task_types: [regression]
-    description: Gradient boosting with leaf-wise growth; fast on large tabular data.
-    required_packages: [lightgbm]
-    interpretability: low
-    compute_class: small
-    recommended_validation: k-fold cross-validation with early stopping
-    known_failure_modes:
-      - overfits small datasets
-      - leaf-wise growth can produce unstable splits
-      - categorical handling differs from other libraries
-    documentation: https://lightgbm.readthedocs.io/
-
-  - model_id: xgboost.regressor
-    name: XGBoost regressor
-    task_types: [regression]
-    description: Regularized gradient boosting; widely used tabular benchmark model.
-    required_packages: [xgboost]
-    interpretability: low
-    compute_class: small
-    recommended_validation: k-fold cross-validation with early stopping
-    known_failure_modes: [overfits without regularization, extrapolates poorly]
-    documentation: https://xgboost.readthedocs.io/
-
-  - model_id: statsmodels.ols
-    name: OLS with inferential statistics
-    task_types: [regression]
-    description: Linear regression with coefficients, standard errors, and diagnostics.
-    required_packages: [statsmodels]
-    interpretability: high
-    compute_class: tiny
-    recommended_validation: residual diagnostics; cross-validation for predictive claims
-    known_failure_modes: [assumption violations, inference invalid under heteroskedasticity]
-    documentation: https://www.statsmodels.org/stable/regression.html
-
-  - model_id: scipy.curve_fit
-    name: Nonlinear least squares fit
-    task_types: [regression]
-    description: Fit a parametric nonlinear function to data.
-    required_packages: [scipy]
-    interpretability: high
-    compute_class: small
-    recommended_validation: residual analysis; compare to linear baseline; multiple starting points
-    known_failure_modes: [local minima, sensitive to initial guesses and scaling]
-    documentation: https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.curve_fit.html
-
-  - model_id: sklearn.logistic_regression
-    name: Logistic regression
-    task_types: [classification]
-    description: Linear classifier with probabilistic outputs.
-    required_packages: [scikit-learn]
-    interpretability: high
-    compute_class: tiny
-    recommended_validation: stratified k-fold; calibration and class-imbalance checks
-    known_failure_modes: [underfits nonlinear boundaries, sensitive to scaling]
-    documentation: https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html
-
-  - model_id: sklearn.random_forest_classifier
-    name: Random forest classifier
-    task_types: [classification]
-    description: Bagged decision trees for classification.
-    required_packages: [scikit-learn]
-    interpretability: medium
-    compute_class: small
-    recommended_validation: stratified k-fold; per-class metrics
-    known_failure_modes: [poorly calibrated probabilities, extrapolation failure]
-    documentation: https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html
-
-  - model_id: naive.last_value
-    name: Last-value forecast (baseline)
-    task_types: [forecasting]
-    description: Forecast equals the most recent observation.
-    required_packages: []
-    interpretability: high
-    compute_class: tiny
-    recommended_validation: rolling-origin evaluation
-    known_failure_modes: [no seasonality, no trend]
-    is_baseline: true
-
-  - model_id: naive.drift
-    name: Drift forecast (baseline)
-    task_types: [forecasting]
-    description: Extrapolates the line from the first to the last training observation.
-    required_packages: []
-    interpretability: high
-    compute_class: tiny
-    recommended_validation: rolling-origin evaluation
-    known_failure_modes: [unstable slope on short series, ignores seasonality]
-    is_baseline: true
-
-  - model_id: naive.seasonal
-    name: Seasonal naive forecast (baseline)
-    task_types: [forecasting]
-    description: Forecast equals the observation from the same season one period ago.
-    required_packages: []
-    interpretability: high
-    compute_class: tiny
-    recommended_validation: rolling-origin evaluation
-    known_failure_modes: [requires a stable seasonal period, no trend handling]
-    is_baseline: true
-
-  - model_id: statsforecast.auto_arima
-    name: AutoARIMA
-    task_types: [forecasting]
-    description: Automatic ARIMA order selection for univariate series.
-    required_packages: [statsforecast]
-    supports_exogenous: true
-    interpretability: medium
-    compute_class: small
-    recommended_validation: rolling-origin evaluation against naive baselines
-    known_failure_modes: [misses complex seasonality, order search can be slow]
-    documentation: https://nixtlaverse.nixtla.io/statsforecast/
-
-  - model_id: pyomo.milp
-    name: MILP optimization model
-    task_types: [optimization]
-    description: Mixed-integer linear program solved by an external solver.
-    required_packages: [pyomo]
-    supports_constraints: true
-    interpretability: high
-    compute_class: medium
-    recommended_validation: verify constraint satisfaction and solver optimality status
-    known_failure_modes: [infeasible formulations, solver time limits, poor scaling]
-    documentation: https://www.pyomo.org/
-
-  - model_id: salib.sobol
-    name: Sobol sensitivity analysis
-    task_types: [sensitivity]
-    description: Variance-based global sensitivity indices for model parameters.
-    required_packages: [SALib]
-    interpretability: medium
-    compute_class: medium
-    recommended_validation: convergence of indices as sample size grows
-    known_failure_modes: [expensive sampling, unreliable for many parameters]
-    documentation: https://salib.readthedocs.io/
+- model_id: sklearn.dummy_regressor
+  name: Dummy regressor (mean baseline)
+  task_types:
+  - regression
+  description: Predicts the training mean. The minimum baseline any regression model
+    must beat.
+  required_packages:
+  - scikit-learn
+  interpretability: low
+  compute_class: tiny
+  recommended_validation: k-fold cross-validation with the same split as candidates
+  known_failure_modes:
+  - ignores all features
+  - unusable as a real model
+  documentation: https://scikit-learn.org/stable/modules/generated/sklearn.dummy.DummyRegressor.html
+  is_baseline: true
+  parsimony_rank: 0
+- model_id: sklearn.linear_regression
+  name: Ordinary least squares
+  task_types:
+  - regression
+  description: Linear model fitted by minimizing squared error. Transparent and fast.
+  required_packages:
+  - scikit-learn
+  interpretability: high
+  compute_class: tiny
+  recommended_validation: k-fold cross-validation; inspect residual structure
+  known_failure_modes:
+  - sensitive to outliers
+  - cannot capture nonlinear relationships
+  - unstable under multicollinearity
+  documentation: https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LinearRegression.html
+  parsimony_rank: 10
+- model_id: sklearn.ridge
+  name: Ridge regression
+  task_types:
+  - regression
+  description: Linear model with L2 regularization; stabilizes collinear features.
+  required_packages:
+  - scikit-learn
+  interpretability: high
+  compute_class: tiny
+  recommended_validation: k-fold cross-validation; tune alpha
+  known_failure_modes:
+  - biased under strong nonlinearity
+  - alpha selection overfit if tuned on test data
+  documentation: https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.Ridge.html
+  parsimony_rank: 8
+- model_id: sklearn.random_forest_regressor
+  name: Random forest regressor
+  task_types:
+  - regression
+  description: Bagged decision trees; captures nonlinearity and interactions.
+  required_packages:
+  - scikit-learn
+  interpretability: medium
+  compute_class: small
+  recommended_validation: k-fold cross-validation; compare with a linear baseline
+  known_failure_modes:
+  - extrapolates poorly outside the training range
+  - high memory for deep forests
+  - biased toward high-cardinality features in impurity importance
+  documentation: https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestRegressor.html
+  parsimony_rank: 5
+- model_id: sklearn.hist_gradient_boosting_regressor
+  name: Histogram gradient boosting regressor
+  task_types:
+  - regression
+  description: Boosted trees with histogram binning; strong tabular performer.
+  required_packages:
+  - scikit-learn
+  interpretability: low
+  compute_class: small
+  recommended_validation: k-fold cross-validation; early stopping on a validation
+    fold
+  known_failure_modes:
+  - overfits small data without regularization
+  - extrapolates poorly
+  documentation: https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.HistGradientBoostingRegressor.html
+  parsimony_rank: 4
+- model_id: lightgbm.regressor
+  name: LightGBM regressor
+  task_types:
+  - regression
+  description: Gradient boosting with leaf-wise growth; fast on large tabular data.
+  required_packages:
+  - lightgbm
+  interpretability: low
+  compute_class: small
+  recommended_validation: k-fold cross-validation with early stopping
+  known_failure_modes:
+  - overfits small datasets
+  - leaf-wise growth can produce unstable splits
+  - categorical handling differs from other libraries
+  documentation: https://lightgbm.readthedocs.io/
+  parsimony_rank: 4
+- model_id: xgboost.regressor
+  name: XGBoost regressor
+  task_types:
+  - regression
+  description: Regularized gradient boosting; widely used tabular benchmark model.
+  required_packages:
+  - xgboost
+  interpretability: low
+  compute_class: small
+  recommended_validation: k-fold cross-validation with early stopping
+  known_failure_modes:
+  - overfits without regularization
+  - extrapolates poorly
+  documentation: https://xgboost.readthedocs.io/
+  parsimony_rank: 4
+- model_id: statsmodels.ols
+  name: OLS with inferential statistics
+  task_types:
+  - regression
+  description: Linear regression with coefficients, standard errors, and diagnostics.
+  required_packages:
+  - statsmodels
+  interpretability: high
+  compute_class: tiny
+  recommended_validation: residual diagnostics; cross-validation for predictive claims
+  known_failure_modes:
+  - assumption violations
+  - inference invalid under heteroskedasticity
+  documentation: https://www.statsmodels.org/stable/regression.html
+  parsimony_rank: 10
+- model_id: scipy.curve_fit
+  name: Nonlinear least squares fit
+  task_types:
+  - regression
+  description: Fit a parametric nonlinear function to data.
+  required_packages:
+  - scipy
+  interpretability: high
+  compute_class: small
+  recommended_validation: residual analysis; compare to linear baseline; multiple
+    starting points
+  known_failure_modes:
+  - local minima
+  - sensitive to initial guesses and scaling
+  documentation: https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.curve_fit.html
+  parsimony_rank: 7
+- model_id: sklearn.logistic_regression
+  name: Logistic regression
+  task_types:
+  - classification
+  description: Linear classifier with probabilistic outputs.
+  required_packages:
+  - scikit-learn
+  interpretability: high
+  compute_class: tiny
+  recommended_validation: stratified k-fold; calibration and class-imbalance checks
+  known_failure_modes:
+  - underfits nonlinear boundaries
+  - sensitive to scaling
+  documentation: https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html
+  parsimony_rank: 10
+- model_id: sklearn.random_forest_classifier
+  name: Random forest classifier
+  task_types:
+  - classification
+  description: Bagged decision trees for classification.
+  required_packages:
+  - scikit-learn
+  interpretability: medium
+  compute_class: small
+  recommended_validation: stratified k-fold; per-class metrics
+  known_failure_modes:
+  - poorly calibrated probabilities
+  - extrapolation failure
+  documentation: https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html
+  parsimony_rank: 5
+- model_id: naive.last_value
+  name: Last-value forecast (baseline)
+  task_types:
+  - forecasting
+  description: Forecast equals the most recent observation.
+  required_packages: []
+  interpretability: high
+  compute_class: tiny
+  recommended_validation: rolling-origin evaluation
+  known_failure_modes:
+  - no seasonality
+  - no trend
+  is_baseline: true
+  parsimony_rank: 10
+- model_id: naive.drift
+  name: Drift forecast (baseline)
+  task_types:
+  - forecasting
+  description: Extrapolates the line from the first to the last training observation.
+  required_packages: []
+  interpretability: high
+  compute_class: tiny
+  recommended_validation: rolling-origin evaluation
+  known_failure_modes:
+  - unstable slope on short series
+  - ignores seasonality
+  is_baseline: true
+  parsimony_rank: 10
+- model_id: naive.seasonal
+  name: Seasonal naive forecast (baseline)
+  task_types:
+  - forecasting
+  description: Forecast equals the observation from the same season one period ago.
+  required_packages: []
+  interpretability: high
+  compute_class: tiny
+  recommended_validation: rolling-origin evaluation
+  known_failure_modes:
+  - requires a stable seasonal period
+  - no trend handling
+  is_baseline: true
+  parsimony_rank: 10
+- model_id: statsforecast.auto_arima
+  name: AutoARIMA
+  task_types:
+  - forecasting
+  description: Automatic ARIMA order selection for univariate series.
+  required_packages:
+  - statsforecast
+  supports_exogenous: true
+  interpretability: medium
+  compute_class: small
+  recommended_validation: rolling-origin evaluation against naive baselines
+  known_failure_modes:
+  - misses complex seasonality
+  - order search can be slow
+  documentation: https://nixtlaverse.nixtla.io/statsforecast/
+  parsimony_rank: 5
+- model_id: pyomo.milp
+  name: MILP optimization model
+  task_types:
+  - optimization
+  description: Mixed-integer linear program solved by an external solver.
+  required_packages:
+  - pyomo
+  supports_constraints: true
+  interpretability: high
+  compute_class: medium
+  recommended_validation: verify constraint satisfaction and solver optimality status
+  known_failure_modes:
+  - infeasible formulations
+  - solver time limits
+  - poor scaling
+  documentation: https://www.pyomo.org/
+  parsimony_rank: 5
+- model_id: salib.sobol
+  name: Sobol sensitivity analysis
+  task_types:
+  - sensitivity
+  description: Variance-based global sensitivity indices for model parameters.
+  required_packages:
+  - SALib
+  interpretability: medium
+  compute_class: medium
+  recommended_validation: convergence of indices as sample size grows
+  known_failure_modes:
+  - expensive sampling
+  - unreliable for many parameters
+  documentation: https://salib.readthedocs.io/
+  parsimony_rank: 5

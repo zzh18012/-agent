@@ -72,6 +72,15 @@ class DatasetMetadata(MMOSModel):
         return self
 
 
+class InformationSet(MMOSModel):
+    information_set_id: str
+    target_history_available: bool
+    feature_columns: list[str] = Field(default_factory=list)
+    feature_availability: dict[str, str] = Field(default_factory=dict)
+    forecast_horizon: int = 0
+    lookback_policy: str = "unknown"
+
+
 class TargetSummary(MMOSModel):
     """Target context computed from the real data used by an experiment."""
 
@@ -91,4 +100,3 @@ class TargetSummary(MMOSModel):
     generation_seed: int | None = None
     generation_code_path: str | None = None
     generation_parameters: str | None = None
-    rmse_std_ratio: float | None = None
