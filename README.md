@@ -32,6 +32,8 @@ This repository is under phased construction. See `docs/progress/` for what is r
 | 10 | Independent validators: leakage, numerical, statistical, reproducibility | done (optimization/robustness/sensitivity auditors pending) |
 | 11 | Verified evidence store, artifact hashes, provenance, claims, freeze gate | done |
 | 12 | Paper AST, evidence-grounded tables/figures, Markdown renderer | done |
+| 13 | Red Team attack, author response, judge verdict with conservative aggregation | done (live-verified) |
+| 14 | Automated `mmos run` pipeline and release summary | planned |
 
 Nothing in the README should be read as a claim that later phases are implemented.
 
@@ -110,6 +112,9 @@ uv run mmos add-claim <project_id> --statement "..." --evidence <evidence_id> --
 
 # build and render a Markdown technical report from verified evidence
 uv run mmos paper <project_id> <experiment_id> --tournament <tournament_id>
+
+# adversarial review of the generated paper
+uv run mmos redteam <project_id> <experiment_id> [--tournament <tournament_id>]
 ```
 
 Later phases add `analyze-problem`, `analyze-data`,

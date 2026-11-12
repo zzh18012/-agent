@@ -15,6 +15,7 @@ from mmos.agents import (
     MissingAPIKeyError,
     ModelCouncil,
     ProblemAnalyst,
+    RedTeam,
     ResearchAgent,
     UnsupportedProviderError,
     build_model,
@@ -36,6 +37,7 @@ from mmos.core.project import (
     save_experiment_spec,
     save_problem_spec,
     save_proposals,
+    save_red_team_review,
     save_research_result,
     save_tournament_result,
 )
@@ -875,3 +877,69 @@ def plan_experiment(
             reason=f"experiment planned for {proposal_id}",
         )
     console.print(f"State: {config.state.value}")
+
+
+@app.command()
+def redteam(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    experiment_id: Annotated[str, typer.Argument(help="Frozen experiment id.")],
+    tournament_id: Annotated[
+        str | None, typer.Option("--tournament", help="Tournament id to include.")
+    ] = None,
+    primary_metric: Annotated[
+        str, typer.Option("--metric", help="Primary metric used in the report.")
+    ] = "rmse",
+    higher_is_better: Annotated[
+        bool, typer.Option("--higher-is-better", help="Metric direction.")
+    ] = False,
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Adversarial review, author response, and judge verdict."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    try:
+        ast = build_paper(
+            paths,
+            experiment_id,
+            tournament_id=tournament_id,
+            primary_metric=primary_metric,
+            higher_is_better=higher_is_better,
+        )
+        review = RedTeam(_model_or_exit()).run(ast, experiment_id=experiment_id)
+    except (PaperError, FileNotFoundError, ValueError, KeyError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    target_path = save_red_team_review(paths, review)
+
+    attacks_table = Table(title=f"Red team attacks ({len(review.attacks.attacks)})")
+    attacks_table.add_column("Id")
+    attacks_table.add_column("Severity")
+    attacks_table.add_column("Category")
+    attacks_table.add_column("Target")
+    attacks_table.add_column("Fix")
+    for attack in review.attacks.attacks:
+        attacks_table.add_row(
+            attack.attack_id,
+            attack.severity.value,
+            attack.category.value,
+            attack.target,
+            attack.required_fix,
+        )
+    console.print(attacks_table)
+
+    verdict_table = Table(title="Judge verdicts")
+    verdict_table.add_column("Attack")
+    verdict_table.add_column("Verdict")
+    verdict_table.add_column("Rationale")
+    for verdict in review.judge.verdicts:
+        verdict_table.add_row(verdict.attack_id, verdict.verdict.value, verdict.rationale)
+    console.print(verdict_table)
+
+    console.print(f"Overall: {review.judge.overall.value}")
+    console.print(f"Blocking: {'yes' if review.judge.blocking else 'no'}")
+    console.print(f"Saved: {target_path}")
+    if review.judge.blocking:
+        console.print("Release blocked by unresolved critical issues.", style="red")
+        raise typer.Exit(code=1)

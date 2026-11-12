@@ -12,6 +12,7 @@ from mmos.schemas.problem import ProblemSpec
 from mmos.schemas.project import ProjectConfig, ProjectManifest
 from mmos.schemas.proposal import CouncilDecision, CritiqueReport, ModelProposal, ProposalList
 from mmos.schemas.research import ResearchResult
+from mmos.schemas.review import RedTeamReview
 from mmos.schemas.tournament import TournamentResult
 
 PROJECT_SUBDIRS: tuple[str, ...] = (
@@ -109,6 +110,10 @@ class ProjectPaths:
     @property
     def tournaments_dir(self) -> Path:
         return self.experiments_dir / "tournaments"
+
+    @property
+    def reviews_dir(self) -> Path:
+        return self.root / "reviews"
 
     @property
     def raw_data_dir(self) -> Path:
@@ -251,6 +256,18 @@ def load_tournament_result(paths: ProjectPaths, tournament_id: str) -> Tournamen
     if not target.exists():
         raise FileNotFoundError(f"tournament not found: {tournament_id}")
     return TournamentResult.model_validate_json(target.read_text(encoding="utf-8"))
+
+
+def save_red_team_review(paths: ProjectPaths, review: RedTeamReview) -> Path:
+    paths.reviews_dir.mkdir(parents=True, exist_ok=True)
+    target = paths.reviews_dir / f"redteam_{review.experiment_id}.json"
+    atomic_write_text(target, review.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_red_team_review(paths: ProjectPaths, experiment_id: str) -> RedTeamReview:
+    target = paths.reviews_dir / f"redteam_{experiment_id}.json"
+    return RedTeamReview.model_validate_json(target.read_text(encoding="utf-8"))
 
 
 def create_project(
