@@ -22,6 +22,7 @@ from mmos.schemas.registry import ModelCapability, TaskType
 from mmos.schemas.research import MethodCard, ResearchResult
 from mmos.schemas.state import StateTransitionRecord
 from mmos.schemas.states import ProjectState
+from mmos.schemas.tracking import MLflowRunRecord
 
 __all__ = [
     "Complexity",
@@ -35,6 +36,7 @@ __all__ = [
     "ExpertRole",
     "InputFileRecord",
     "LeakageReport",
+    "MLflowRunRecord",
     "MMOSModel",
     "MethodCard",
     "ModelCapability",

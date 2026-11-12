@@ -27,6 +27,7 @@ This repository is under phased construction. See `docs/progress/` for what is r
 | 5 | Method/proposal/experiment schemas, capability registry, experiment planner | core done; research/council agents pending an API key |
 | 6 | LocalExecutor with safety boundary, timeout, audited execution records | done |
 | 7 | Snakemake workflow: data gate → baseline/candidates → evaluation → artifacts | done (tabular regression/classification) |
+| 8 | MLflow ledger: per-project SQLite store, params/tags/metrics/artifacts | done |
 | 3+ | Agents, data subsystem, model council, experiments, evidence, paper | planned |
 
 Nothing in the README should be read as a claim that later phases are implemented.

@@ -23,6 +23,7 @@ from mmos.experiments.metrics import compute_metrics
 from mmos.schemas.experiment import ExperimentResult
 from mmos.schemas.project import SourceRole
 from mmos.schemas.registry import TaskType
+from mmos.tracking import log_experiment_run
 
 
 def _data_files(paths: ProjectPaths) -> list[Path]:
@@ -146,6 +147,7 @@ def run_experiment(paths: ProjectPaths, experiment_id: str) -> ExperimentResult:
         "created_at": result.generated_at.isoformat(),
     }
     atomic_write_text(experiment_dir / "run_record.json", json.dumps(run_record, indent=2) + "\n")
+    log_experiment_run(paths, spec, result)
     return result
 
 
