@@ -28,6 +28,7 @@ from mmos.evidence import EvidenceError, add_claim, freeze_experiment
 from mmos.execution import LocalExecutor
 from mmos.experiments.tournament import Tournament
 from mmos.orchestration import Orchestrator
+from mmos.paper import PaperError, build_paper, render_paper
 from mmos.registries import ModelRegistry
 from mmos.schemas.experiment import ExperimentResult
 from mmos.schemas.project import SourceRole
@@ -612,3 +613,44 @@ def add_claim_command(
     console.print(f"Claim {claim.claim_id}: {claim.status}")
     console.print(f"Statement: {claim.statement}")
     console.print(f"Saved: {paths.verified_claims_file}")
+
+
+@app.command()
+def paper(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    experiment_id: Annotated[str, typer.Argument(help="Frozen experiment id.")],
+    tournament_id: Annotated[
+        str | None, typer.Option("--tournament", help="Tournament id to include.")
+    ] = None,
+    primary_metric: Annotated[
+        str, typer.Option("--metric", help="Primary metric for the figure.")
+    ] = "rmse",
+    higher_is_better: Annotated[
+        bool, typer.Option("--higher-is-better", help="Metric direction for the figure.")
+    ] = False,
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Build and render a Markdown technical report from verified evidence."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    try:
+        ast = build_paper(
+            paths,
+            experiment_id,
+            tournament_id=tournament_id,
+            primary_metric=primary_metric,
+            higher_is_better=higher_is_better,
+        )
+        target = render_paper(paths, ast)
+    except (PaperError, FileNotFoundError, ValueError, KeyError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"Title: {ast.title}")
+    console.print(
+        f"Tables: {len(ast.tables)}  Figures: {len(ast.figures)}  Claims: {len(ast.claims)}"
+    )
+    console.print(f"Report: {target}")
+    for figure in ast.figures:
+        console.print(f"Figure: {figure.path}")

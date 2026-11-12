@@ -1284,6 +1284,7 @@ name = "mmos"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "matplotlib" },
     { name = "mlflow" },
     { name = "pandera" },
     { name = "polars" },
@@ -1308,6 +1309,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "matplotlib", specifier = ">=3.11.2" },
     { name = "mlflow", specifier = ">=3.18.0" },
     { name = "pandera", specifier = ">=0.36.0" },
     { name = "polars", specifier = ">=2.1.0" },

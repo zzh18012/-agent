@@ -190,6 +190,13 @@ def save_tournament_result(paths: ProjectPaths, result: TournamentResult) -> Pat
     return target
 
 
+def load_tournament_result(paths: ProjectPaths, tournament_id: str) -> TournamentResult:
+    target = paths.tournaments_dir / f"{tournament_id}.json"
+    if not target.exists():
+        raise FileNotFoundError(f"tournament not found: {tournament_id}")
+    return TournamentResult.model_validate_json(target.read_text(encoding="utf-8"))
+
+
 def create_project(
     projects_dir: Path, name: str, *, now: datetime | None = None
 ) -> tuple[ProjectPaths, ProjectConfig]:

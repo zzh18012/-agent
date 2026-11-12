@@ -31,6 +31,7 @@ This repository is under phased construction. See `docs/progress/` for what is r
 | 9 | Tournament: comparability checks, baseline requirement, selection + challenger | done |
 | 10 | Independent validators: leakage, numerical, statistical, reproducibility | done (optimization/robustness/sensitivity auditors pending) |
 | 11 | Verified evidence store, artifact hashes, provenance, claims, freeze gate | done |
+| 12 | Paper AST, evidence-grounded tables/figures, Markdown renderer | done |
 
 Nothing in the README should be read as a claim that later phases are implemented.
 
@@ -100,6 +101,9 @@ uv run mmos validate <project_id> <experiment_id>
 # freeze validated results into verified evidence, then register claims
 uv run mmos freeze-evidence <project_id> <experiment_id>
 uv run mmos add-claim <project_id> --statement "..." --evidence <evidence_id> --accept
+
+# build and render a Markdown technical report from verified evidence
+uv run mmos paper <project_id> <experiment_id> --tournament <tournament_id>
 ```
 
 Later phases add `analyze-problem`, `analyze-data`,

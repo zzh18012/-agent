@@ -10,6 +10,13 @@ from mmos.schemas.data import (
 from mmos.schemas.evidence import ClaimRecord, EvidenceIndex, EvidenceRecord
 from mmos.schemas.execution import ExecutionResult
 from mmos.schemas.experiment import ExperimentResult, ExperimentSpec
+from mmos.schemas.paper import (
+    FigureSpec,
+    PaperAST,
+    PaperFigure,
+    PaperSection,
+    PaperTable,
+)
 from mmos.schemas.problem import ProblemSpec, SubProblem, Variable
 from mmos.schemas.project import InputFileRecord, ProjectConfig, ProjectManifest, SourceRole
 from mmos.schemas.proposal import (
@@ -40,6 +47,7 @@ __all__ = [
     "ExperimentResult",
     "ExperimentSpec",
     "ExpertRole",
+    "FigureSpec",
     "InputFileRecord",
     "LeakageReport",
     "MLflowRunRecord",
@@ -47,6 +55,10 @@ __all__ = [
     "MethodCard",
     "ModelCapability",
     "ModelProposal",
+    "PaperAST",
+    "PaperFigure",
+    "PaperSection",
+    "PaperTable",
     "ProblemSpec",
     "ProjectConfig",
     "ProjectManifest",

@@ -19,6 +19,7 @@ dependencies = [
     "scikit-learn>=1.9.1",
     "snakemake>=9.27.1",
     "mlflow>=3.18.0",
+    "matplotlib>=3.11.2",
 ]
 
 [dependency-groups]
