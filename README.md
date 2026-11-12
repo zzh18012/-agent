@@ -22,6 +22,7 @@ This repository is under phased construction. See `docs/progress/` for what is r
 | 0 | Environment and repository inspection | done |
 | 1 | Project skeleton, configuration, schemas, logging, CLI, tests | done |
 | 2 | Project intake, manifest hashing, state machine, orchestrator | done |
+| 3 | Agent runtime (PydanticAI), model factory, Problem Analyst, ProblemSpec | implemented; live API test pending an API key |
 | 3+ | Agents, data subsystem, model council, experiments, evidence, paper | planned |
 
 Nothing in the README should be read as a claim that later phases are implemented.
@@ -73,6 +74,9 @@ uv run mmos ingest <project_id> ./train.csv --role data
 
 # inspect state, inputs, and legal next states
 uv run mmos status <project_id>
+
+# extract a structured ProblemSpec (requires MMOS_LLM_API_KEY)
+uv run mmos analyze-problem <project_id>
 ```
 
 Later phases add `analyze-problem`, `analyze-data`,

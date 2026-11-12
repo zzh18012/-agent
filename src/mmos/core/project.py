@@ -7,6 +7,7 @@ from pathlib import Path
 
 import yaml
 
+from mmos.schemas.problem import ProblemSpec
 from mmos.schemas.project import ProjectConfig, ProjectManifest
 
 PROJECT_SUBDIRS: tuple[str, ...] = (
@@ -53,6 +54,10 @@ class ProjectPaths:
     @property
     def state_history_file(self) -> Path:
         return self.manifest_dir / "state_history.jsonl"
+
+    @property
+    def problem_spec_file(self) -> Path:
+        return self.manifest_dir / "problem_spec.json"
 
     @property
     def raw_data_dir(self) -> Path:
@@ -106,6 +111,14 @@ def save_manifest(paths: ProjectPaths, manifest: ProjectManifest) -> None:
 
 def load_manifest(paths: ProjectPaths) -> ProjectManifest:
     return ProjectManifest.model_validate_json(paths.manifest_file.read_text(encoding="utf-8"))
+
+
+def save_problem_spec(paths: ProjectPaths, spec: ProblemSpec) -> None:
+    _atomic_write_text(paths.problem_spec_file, spec.model_dump_json(indent=2) + "\n")
+
+
+def load_problem_spec(paths: ProjectPaths) -> ProblemSpec:
+    return ProblemSpec.model_validate_json(paths.problem_spec_file.read_text(encoding="utf-8"))
 
 
 def create_project(

@@ -10,16 +10,20 @@ from rich.console import Console
 from rich.table import Table
 
 from mmos import __version__
+from mmos.agents import MissingAPIKeyError, ProblemAnalyst, UnsupportedProviderError, build_model
 from mmos.config import get_settings
 from mmos.core.project import (
+    ProjectPaths,
     create_project,
     load_manifest,
     load_project_config,
     resolve_project,
+    save_problem_spec,
 )
 from mmos.core.state_machine import allowed_targets
 from mmos.orchestration import Orchestrator
 from mmos.schemas.project import SourceRole
+from mmos.schemas.states import ProjectState
 from mmos.utils.logging import configure_logging
 
 console = Console()
@@ -46,6 +50,32 @@ def _git_version() -> str:
 
 def _projects_base(projects_dir: Path | None) -> Path:
     return projects_dir if projects_dir is not None else get_settings().projects_dir
+
+
+_TEXT_PROBLEM_SUFFIXES = {".md", ".markdown", ".txt"}
+
+
+def _collect_problem_text(paths: ProjectPaths) -> str:
+    manifest = load_manifest(paths)
+    problem_files = [
+        paths.root / record.path
+        for record in manifest.inputs
+        if record.source_role is SourceRole.PROBLEM
+    ]
+    if not problem_files:
+        raise ValueError(
+            "no problem files ingested; run: mmos ingest <project> <file> --role problem"
+        )
+
+    sections: list[str] = []
+    for problem_file in problem_files:
+        if problem_file.suffix.lower() not in _TEXT_PROBLEM_SUFFIXES:
+            raise ValueError(
+                f"unsupported problem file type: {problem_file.name} "
+                "(Phase 3 accepts .md, .markdown, .txt; PDF/Word parsing comes later)"
+            )
+        sections.append(f"## {problem_file.name}\n\n{problem_file.read_text(encoding='utf-8')}")
+    return "\n\n".join(sections)
 
 
 app = typer.Typer(
@@ -163,3 +193,40 @@ def status(
     )
     table.add_row("Allowed next", next_states or "none")
     console.print(table)
+
+
+@app.command(name="analyze-problem")
+def analyze_problem(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Extract a structured ProblemSpec from the ingested problem statement."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    config = load_project_config(paths)
+    if config.state not in (ProjectState.PROJECT_INGESTED, ProjectState.PROBLEM_UNDERSTOOD):
+        console.print(
+            f"Project state {config.state.value} does not allow problem analysis; "
+            "expected PROJECT_INGESTED or PROBLEM_UNDERSTOOD."
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        problem_text = _collect_problem_text(paths)
+        model = build_model(get_settings())
+    except (ValueError, MissingAPIKeyError, UnsupportedProviderError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    spec = ProblemAnalyst(model).analyze(problem_text, problem_id=config.project_id)
+    save_problem_spec(paths, spec)
+    console.print(f"Saved ProblemSpec: {paths.problem_spec_file}")
+    console.print(f"Subproblems: {len(spec.subproblems)}")
+
+    if config.state is ProjectState.PROJECT_INGESTED:
+        config = Orchestrator(paths).transition(
+            ProjectState.PROBLEM_UNDERSTOOD,
+            reason=f"problem analyzed ({len(spec.subproblems)} subproblems)",
+        )
+    console.print(f"State: {config.state.value}")
