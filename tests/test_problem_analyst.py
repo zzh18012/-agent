@@ -43,6 +43,7 @@ def test_missing_api_key_is_reported() -> None:
 def test_deepseek_model_is_constructed_without_network() -> None:
     model = build_model(Settings(_env_file=None, llm_api_key="test-key"))
     assert isinstance(model, OpenAIChatModel)
+    assert str(model.client.base_url).startswith("https://api.deepseek.com")
 
 
 def test_openai_model_with_base_url_is_constructed_without_network() -> None:

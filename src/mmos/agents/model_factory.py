@@ -6,6 +6,8 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from mmos.config.settings import LLMProviderName, Settings
 
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+
 
 class MissingAPIKeyError(RuntimeError):
     pass
@@ -25,16 +27,20 @@ def build_model(settings: Settings) -> Model:
 
     # A bounded request timeout prevents a single stalled HTTP call from hanging a
     # pipeline indefinitely; provider retries handle transient errors.
-    client = AsyncOpenAI(
-        api_key=api_key,
-        base_url=settings.llm_base_url,
-        timeout=settings.llm_timeout_seconds,
-    )
-
     if settings.llm_provider is LLMProviderName.DEEPSEEK:
+        client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=settings.llm_base_url or DEEPSEEK_BASE_URL,
+            timeout=settings.llm_timeout_seconds,
+        )
         return OpenAIChatModel(settings.llm_model, provider=DeepSeekProvider(openai_client=client))
 
     if settings.llm_provider is LLMProviderName.OPENAI:
+        client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=settings.llm_base_url,
+            timeout=settings.llm_timeout_seconds,
+        )
         return OpenAIChatModel(settings.llm_model, provider=OpenAIProvider(openai_client=client))
 
     raise UnsupportedProviderError(
