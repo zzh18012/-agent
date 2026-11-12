@@ -30,7 +30,7 @@ This repository is under phased construction. See `docs/progress/` for what is r
 | 8 | MLflow ledger: per-project SQLite store, params/tags/metrics/artifacts | done |
 | 9 | Tournament: comparability checks, baseline requirement, selection + challenger | done |
 | 10 | Independent validators: leakage, numerical, statistical, reproducibility | done (optimization/robustness/sensitivity auditors pending) |
-| 3+ | Agents, data subsystem, model council, experiments, evidence, paper | planned |
+| 11 | Verified evidence store, artifact hashes, provenance, claims, freeze gate | done |
 
 Nothing in the README should be read as a claim that later phases are implemented.
 
@@ -96,6 +96,10 @@ uv run mmos tournament <project_id> <experiment_id...> --metric rmse
 
 # run independent validators against one experiment
 uv run mmos validate <project_id> <experiment_id>
+
+# freeze validated results into verified evidence, then register claims
+uv run mmos freeze-evidence <project_id> <experiment_id>
+uv run mmos add-claim <project_id> --statement "..." --evidence <evidence_id> --accept
 ```
 
 Later phases add `analyze-problem`, `analyze-data`,
