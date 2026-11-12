@@ -7,6 +7,7 @@ from mmos.schemas.data import (
     Severity,
     TableProfile,
 )
+from mmos.schemas.evidence import ClaimRecord, EvidenceIndex, EvidenceRecord
 from mmos.schemas.execution import ExecutionResult
 from mmos.schemas.experiment import ExperimentResult, ExperimentSpec
 from mmos.schemas.problem import ProblemSpec, SubProblem, Variable
@@ -27,11 +28,14 @@ from mmos.schemas.tracking import MLflowRunRecord
 from mmos.schemas.validation import ValidationIssue, ValidationReport, ValidationStatus
 
 __all__ = [
+    "ClaimRecord",
     "Complexity",
     "CouncilDecision",
     "DataQualityReport",
     "DataSchema",
     "DatasetProfile",
+    "EvidenceIndex",
+    "EvidenceRecord",
     "ExecutionResult",
     "ExperimentResult",
     "ExperimentSpec",

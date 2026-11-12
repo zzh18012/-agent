@@ -101,6 +101,18 @@ class ProjectPaths:
         return self.root / "verified"
 
     @property
+    def verified_numbers_file(self) -> Path:
+        return self.verified_dir / "numbers.json"
+
+    @property
+    def verified_claims_file(self) -> Path:
+        return self.verified_dir / "claims.yaml"
+
+    @property
+    def verified_metrics_dir(self) -> Path:
+        return self.verified_dir / "metrics"
+
+    @property
     def log_dir(self) -> Path:
         return self.root / "logs"
 

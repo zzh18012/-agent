@@ -24,6 +24,7 @@ from mmos.core.project import (
 )
 from mmos.core.state_machine import allowed_targets
 from mmos.data import DataAgent
+from mmos.evidence import EvidenceError, add_claim, freeze_experiment
 from mmos.execution import LocalExecutor
 from mmos.experiments.tournament import Tournament
 from mmos.orchestration import Orchestrator
@@ -538,3 +539,76 @@ def validate(
         console.print("Validation FAILED with blocking issues.", style="red")
         raise typer.Exit(code=1)
     console.print("Validation passed.")
+
+
+@app.command(name="freeze-evidence")
+def freeze_evidence_command(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    experiment_id: Annotated[str, typer.Argument(help="Validated experiment id.")],
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Freeze validated experiment results into the verified evidence store."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    config = load_project_config(paths)
+    if config.state in _EARLY_STATES or config.state in ESCAPE_STATES:
+        console.print(f"Project state {config.state.value} does not allow evidence freezing.")
+        raise typer.Exit(code=1)
+
+    try:
+        records = freeze_experiment(paths, experiment_id)
+    except (EvidenceError, FileNotFoundError, KeyError, ValueError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    table = Table(title=f"Verified evidence ({len(records)} records)")
+    table.add_column("Evidence id")
+    table.add_column("Key")
+    table.add_column("Value", justify="right")
+    for record in records:
+        table.add_row(record.evidence_id, record.key, record.display_value)
+    console.print(table)
+    console.print(f"Store: {paths.verified_numbers_file}")
+
+
+@app.command(name="add-claim")
+def add_claim_command(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    statement: Annotated[str, typer.Option("--statement", help="Claim statement.")],
+    evidence: Annotated[
+        list[str] | None,
+        typer.Option("--evidence", help="Evidence id; repeat for multiple ids."),
+    ] = None,
+    claim_id: Annotated[str | None, typer.Option("--claim-id", help="Explicit claim id.")] = None,
+    accept: Annotated[
+        bool, typer.Option("--accept", help="Mark the claim as supported by a human.")
+    ] = False,
+    notes: Annotated[str, typer.Option("--notes", help="Reviewer notes.")] = "",
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Register a paper claim backed by verified evidence."""
+    if not evidence:
+        console.print("Error: at least one --evidence id is required.", style="red")
+        raise typer.Exit(code=1)
+
+    paths = resolve_project(project, _projects_base(projects_dir))
+    try:
+        claim = add_claim(
+            paths,
+            statement=statement,
+            evidence_ids=evidence,
+            claim_id=claim_id,
+            accept=accept,
+            reviewer="cli" if accept else None,
+            notes=notes,
+        )
+    except EvidenceError as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"Claim {claim.claim_id}: {claim.status}")
+    console.print(f"Statement: {claim.statement}")
+    console.print(f"Saved: {paths.verified_claims_file}")

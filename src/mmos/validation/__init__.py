@@ -1,7 +1,7 @@
 import json
 from collections.abc import Callable
 
-from mmos.core.project import ProjectPaths, atomic_write_text
+from mmos.core.project import ProjectPaths, atomic_write_text, sha256_file
 from mmos.schemas.validation import ValidationReport
 from mmos.validation.leakage import validate_leakage
 from mmos.validation.numerical import validate_numerical
@@ -36,9 +36,19 @@ def validate_experiment(
         atomic_write_text(output_dir / f"{name}.json", report.model_dump_json(indent=2) + "\n")
         reports.append(report)
 
+    artifact_hashes: dict[str, str] = {}
+    artifacts_dir = paths.experiment_dir(experiment_id) / "artifacts"
+    metrics_artifact = artifacts_dir / "metrics.json"
+    predictions_artifact = artifacts_dir / "predictions.parquet"
+    if metrics_artifact.exists():
+        artifact_hashes["metrics_sha256"] = sha256_file(metrics_artifact)
+    if predictions_artifact.exists():
+        artifact_hashes["predictions_sha256"] = sha256_file(predictions_artifact)
+
     summary = {
         "experiment_id": experiment_id,
         "blocking": any(report.blocking for report in reports),
+        "artifacts": artifact_hashes,
         "reports": {
             report.validator: {
                 "status": report.status.value,
