@@ -402,6 +402,30 @@ def run_pipeline(
         save_red_team_review(paths, review)
 
     if review.judge.blocking:
+        verdicts = {verdict.attack_id: verdict for verdict in review.judge.verdicts}
+        lines = [
+            "# Release blocked — human review required",
+            "",
+            f"Experiment: `{experiment_id}`",
+            "",
+        ]
+        for attack in review.attacks.attacks:
+            verdict = verdicts[attack.attack_id]
+            lines.extend(
+                [
+                    f"## {attack.attack_id} — {attack.severity.value} / "
+                    f"{attack.category.value} → {verdict.verdict.value}",
+                    f"- Target: {attack.target}",
+                    f"- Attack: {attack.argument}",
+                    f"- Required fix: {attack.required_fix}",
+                    f"- Judge: {verdict.rationale}",
+                    "",
+                ]
+            )
+        atomic_write_text(
+            paths.reviews_dir / f"blocked_release_{experiment_id}.md",
+            "\n".join(lines),
+        )
         _escape(paths, "pipeline: red team blocking")
         raise PipelineBlocked("red team blocked release with unresolved critical attacks")
 

@@ -52,6 +52,7 @@ def create_metric_figure(
         figure.savefig(target, dpi=200, format=file_format)
         files[file_format] = target.relative_to(paths.root).as_posix()
         hashes[file_format] = sha256_file(target)
+    figure.clear()
 
     caption = f"Cross-validated {metric} by model ({direction})."
     spec = FigureSpec(

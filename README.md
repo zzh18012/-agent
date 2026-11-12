@@ -33,7 +33,7 @@ This repository is under phased construction. See `docs/progress/` for what is r
 | 11 | Verified evidence store, artifact hashes, provenance, claims, freeze gate | done |
 | 12 | Paper AST, evidence-grounded tables/figures, Markdown renderer | done |
 | 13 | Red Team attack, author response, judge verdict with conservative aggregation | done (live-verified) |
-| 14 | Automated `mmos run` pipeline and release summary | planned |
+| 14 | Automated `mmos run` pipeline, release gate, blocked-release handoff | implemented; demo was correctly blocked by red team |
 
 Nothing in the README should be read as a claim that later phases are implemented.
 
@@ -115,6 +115,9 @@ uv run mmos paper <project_id> <experiment_id> --tournament <tournament_id>
 
 # adversarial review of the generated paper
 uv run mmos redteam <project_id> <experiment_id> [--tournament <tournament_id>]
+
+# full pipeline: analyze -> research -> council -> experiment -> evidence -> paper -> red team
+uv run mmos run <project_id> --target <column> --feature <column> --feature <column>
 ```
 
 Later phases add `analyze-problem`, `analyze-data`,

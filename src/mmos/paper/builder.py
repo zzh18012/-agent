@@ -129,6 +129,15 @@ def build_paper(
         f".{primary_metric}"
     )
 
+    baseline_name = tournament.challenger_model if tournament is not None else None
+    baseline_record = grouped.get(baseline_name, {}).get(primary_metric) if baseline_name else None
+    baseline_sentence = (
+        f"The best baseline ({baseline_name}) reports {primary_metric} = "
+        f"{baseline_record.display_value}. "
+        if baseline_record is not None
+        else ""
+    )
+
     title = (
         f"{problem.title} — Technical Report"
         if problem
@@ -138,7 +147,10 @@ def build_paper(
         f"This report is generated from {len(records)} verified evidence records for "
         f"experiment {experiment_id}. Under the verified cross-validation protocol, "
         f"{selected_name} reports {primary_metric} = {selected_display}. "
-        "Every number in this report comes from the verified evidence store."
+        f"{baseline_sentence}"
+        "This is a single point estimate. No external validation, robustness, or "
+        "sensitivity analysis was performed. Every number in this report comes from "
+        "the verified evidence store."
     )
 
     sections: list[PaperSection] = []
@@ -168,6 +180,8 @@ def build_paper(
                 f"Dataset hash: `{spec.dataset_hash}`. Target column: `{spec.target_column}`. "
                 f"Features: {', '.join(spec.feature_set)}. Split: {spec.split_strategy} with "
                 f"{spec.n_splits} folds, seed {spec.random_seed}.",
+                "No preprocessing or imputation is applied before splitting; the runner "
+                "uses the selected raw columns.",
                 f"Validation results: {validator_status}.",
             ],
         )
@@ -176,8 +190,14 @@ def build_paper(
         PaperSection(
             heading="Results",
             blocks=[
-                "Metrics in the table below are computed from out-of-fold predictions and "
-                "were independently recomputed by the numerical auditor.",
+                f"Table `{metrics_table.table_id}` reports metrics computed from out-of-fold "
+                "predictions, independently recomputed by the numerical auditor.",
+                f"Selected model {selected_name}: {primary_metric} = {selected_display}."
+                + (
+                    f" Best baseline {baseline_name}: {baseline_record.display_value}."
+                    if baseline_record is not None
+                    else ""
+                ),
                 f"Figure {figure.figure_id} visualizes {primary_metric} from the same "
                 "verified evidence.",
             ],
@@ -204,6 +224,15 @@ def build_paper(
             )
         )
 
+    run_record_path = paths.experiment_dir(experiment_id) / "run_record.json"
+    environment_note = "Environment versions were not recorded."
+    if run_record_path.exists():
+        run_record = json.loads(run_record_path.read_text(encoding="utf-8"))
+        environment_note = (
+            f"Environment: Python {run_record.get('python_version', 'unknown')}, "
+            f"scikit-learn {run_record.get('sklearn_version', 'unknown')}."
+        )
+
     sections.append(
         PaperSection(
             heading="Reproducibility",
@@ -212,6 +241,7 @@ def build_paper(
                 f"`{provenance.get('metrics_sha256', '')}`.",
                 f"Experiment spec sha256: `{provenance.get('experiment_spec_sha256', '')}`. "
                 f"MLflow run id: `{provenance.get('mlflow_run_id', '')}`.",
+                environment_note,
             ],
         )
     )

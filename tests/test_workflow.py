@@ -58,23 +58,25 @@ def test_snakemake_workflow_runs_gate_then_experiment(tmp_path: Path) -> None:
     )
     save_experiment_spec(paths, spec)
 
-    result = LocalExecutor(paths).run(
-        [
-            snakemake,
-            "-s",
-            str(WORKFLOW_FILE),
-            "--cores",
-            "1",
-            "--config",
-            f"experiment_id={spec.experiment_id}",
-        ],
-        cwd=paths.root,
-        timeout_seconds=300,
-    )
-
-    stderr = (paths.root / result.stderr_path).read_text(encoding="utf-8", errors="replace")
-    stdout = (paths.root / result.stdout_path).read_text(encoding="utf-8", errors="replace")
-    assert result.succeeded(), f"snakemake failed\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+    command = [
+        snakemake,
+        "-s",
+        str(WORKFLOW_FILE),
+        "--cores",
+        "1",
+        "--config",
+        f"experiment_id={spec.experiment_id}",
+    ]
+    for attempt in range(2):
+        result = LocalExecutor(paths).run(command, cwd=paths.root, timeout_seconds=300)
+        stderr = (paths.root / result.stderr_path).read_text(encoding="utf-8", errors="replace")
+        stdout = (paths.root / result.stdout_path).read_text(encoding="utf-8", errors="replace")
+        if result.succeeded():
+            break
+        # Windows can fail to spawn the rule subprocess with WinError 8 under
+        # resource pressure. Retry once only for that observed OS-level error.
+        if "WinError 8" not in stderr or attempt == 1:
+            assert result.succeeded(), f"snakemake failed\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
 
     artifacts = paths.experiments_dir / spec.experiment_id / "artifacts"
     assert (artifacts / "data_gate.json").exists()
