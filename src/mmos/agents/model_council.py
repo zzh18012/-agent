@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from pydantic_ai import Agent
 from pydantic_ai.models import Model
 
-from mmos.agents.catalog import registry_catalog
+from mmos.agents.catalog import EXECUTABLE_MODEL_IDS, executable_catalog
 from mmos.registries import ModelRegistry
 from mmos.schemas.problem import ProblemSpec
 from mmos.schemas.proposal import (
@@ -71,8 +71,11 @@ def normalize_proposals(
     role: ExpertRole,
     spec: ProblemSpec,
     registry: ModelRegistry,
+    *,
+    allowed_model_ids: set[str] | frozenset[str] | None = None,
 ) -> tuple[list[ModelProposal], list[str]]:
-    """Drop proposals that name unknown subproblems or unregistered models."""
+    """Drop proposals that name unknown subproblems or non-executable models."""
+    allowed = allowed_model_ids if allowed_model_ids is not None else registry.ids()
     subproblem_ids = {subproblem.subproblem_id for subproblem in spec.subproblems}
     proposals: list[ModelProposal] = []
     notes: list[str] = []
@@ -84,7 +87,9 @@ def normalize_proposals(
             )
             continue
         registry_ids = [
-            model_id for model_id in proposal.registry_model_ids if registry.has(model_id)
+            model_id
+            for model_id in proposal.registry_model_ids
+            if model_id in allowed and registry.has(model_id)
         ]
         if not registry_ids:
             notes.append(f"dropped proposal {proposal.name!r}: no registered executable model")
@@ -178,7 +183,7 @@ class ModelCouncil:
         registry: ModelRegistry,
         data_summary: str | None = None,
     ) -> CouncilOutcome:
-        catalog = registry_catalog(registry)
+        catalog = executable_catalog(registry)
         problem_json = spec.model_dump_json(indent=2)
         methods = "\n".join(
             f"- {method.name} ({method.method_id}): {method.core_idea}"
@@ -202,7 +207,9 @@ class ModelCouncil:
                 + (f"Data summary:\n{data_summary}\n\n" if data_summary else "")
                 + "Propose 1-2 models as this expert."
             ).output
-            normalized, proposal_notes = normalize_proposals(batch, role, spec, registry)
+            normalized, proposal_notes = normalize_proposals(
+                batch, role, spec, registry, allowed_model_ids=EXECUTABLE_MODEL_IDS
+            )
             proposals.extend(normalized)
             notes.extend(proposal_notes)
 

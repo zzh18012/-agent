@@ -19,6 +19,26 @@ NEXT_STATE: dict[ProjectState, ProjectState] = {
     ProjectState.READY_FOR_RELEASE: ProjectState.RELEASED,
 }
 
+LINEAR_ORDER: tuple[ProjectState, ...] = (
+    ProjectState.INIT,
+    ProjectState.PROJECT_INGESTED,
+    ProjectState.PROBLEM_UNDERSTOOD,
+    ProjectState.DATA_VALIDATED,
+    ProjectState.RESEARCH_COMPLETED,
+    ProjectState.CANDIDATES_PROPOSED,
+    ProjectState.PROTOTYPING,
+    ProjectState.PROTOTYPED,
+    ProjectState.FULL_EXPERIMENT,
+    ProjectState.EXPERIMENT_COMPLETED,
+    ProjectState.VALIDATING,
+    ProjectState.VERIFIED,
+    ProjectState.EVIDENCE_FROZEN,
+    ProjectState.PAPER_DRAFTED,
+    ProjectState.RED_TEAM_REVIEW,
+    ProjectState.READY_FOR_RELEASE,
+    ProjectState.RELEASED,
+)
+
 TERMINAL_STATES = frozenset({ProjectState.RELEASED})
 
 

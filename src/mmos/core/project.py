@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 
 from mmos.schemas.experiment import ExperimentSpec
+from mmos.schemas.pipeline import PipelineState, ReleaseSummary
 from mmos.schemas.problem import ProblemSpec
 from mmos.schemas.project import ProjectConfig, ProjectManifest
 from mmos.schemas.proposal import CouncilDecision, CritiqueReport, ModelProposal, ProposalList
@@ -29,6 +30,7 @@ PROJECT_SUBDIRS: tuple[str, ...] = (
     "verified/figures",
     "verified/equations",
     "reviews",
+    "releases",
     "paper",
     "logs",
     "manifests",
@@ -81,6 +83,10 @@ class ProjectPaths:
         return self.manifest_dir / "council_decision.json"
 
     @property
+    def pipeline_state_file(self) -> Path:
+        return self.manifest_dir / "pipeline_state.json"
+
+    @property
     def data_profile_file(self) -> Path:
         return self.manifest_dir / "data_profile.json"
 
@@ -114,6 +120,10 @@ class ProjectPaths:
     @property
     def reviews_dir(self) -> Path:
         return self.root / "reviews"
+
+    @property
+    def releases_dir(self) -> Path:
+        return self.root / "releases"
 
     @property
     def raw_data_dir(self) -> Path:
@@ -268,6 +278,23 @@ def save_red_team_review(paths: ProjectPaths, review: RedTeamReview) -> Path:
 def load_red_team_review(paths: ProjectPaths, experiment_id: str) -> RedTeamReview:
     target = paths.reviews_dir / f"redteam_{experiment_id}.json"
     return RedTeamReview.model_validate_json(target.read_text(encoding="utf-8"))
+
+
+def load_pipeline_state(paths: ProjectPaths) -> PipelineState | None:
+    if not paths.pipeline_state_file.exists():
+        return None
+    return PipelineState.model_validate_json(paths.pipeline_state_file.read_text(encoding="utf-8"))
+
+
+def save_pipeline_state(paths: ProjectPaths, state: PipelineState) -> None:
+    atomic_write_text(paths.pipeline_state_file, state.model_dump_json(indent=2) + "\n")
+
+
+def save_release_summary(paths: ProjectPaths, summary: ReleaseSummary) -> Path:
+    paths.releases_dir.mkdir(parents=True, exist_ok=True)
+    target = paths.releases_dir / f"{summary.release_id}.json"
+    atomic_write_text(target, summary.model_dump_json(indent=2) + "\n")
+    return target
 
 
 def create_project(

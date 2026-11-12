@@ -20,10 +20,11 @@ from mmos.agents import (
     UnsupportedProviderError,
     build_model,
 )
+from mmos.agents.catalog import EXECUTABLE_MODEL_IDS
 from mmos.config import get_settings
 from mmos.core.dataset import dataset_fingerprint
+from mmos.core.problem_text import collect_problem_text
 from mmos.core.project import (
-    ProjectPaths,
     create_project,
     experiment_spec_file,
     load_manifest,
@@ -44,11 +45,12 @@ from mmos.core.project import (
 from mmos.core.state_machine import allowed_targets
 from mmos.data import DataAgent
 from mmos.evidence import EvidenceError, add_claim, freeze_experiment
-from mmos.execution import LocalExecutor
 from mmos.experiments.planner import ExperimentPlanner
 from mmos.experiments.tournament import Tournament
+from mmos.experiments.workflow import run_experiment_workflow
 from mmos.orchestration import Orchestrator
 from mmos.paper import PaperError, build_paper, render_paper
+from mmos.pipeline import PipelineBlocked, PipelineOptions, run_pipeline
 from mmos.registries import ModelRegistry
 from mmos.schemas.data import DataSchema
 from mmos.schemas.experiment import ExperimentResult
@@ -82,32 +84,6 @@ def _git_version() -> str:
 
 def _projects_base(projects_dir: Path | None) -> Path:
     return projects_dir if projects_dir is not None else get_settings().projects_dir
-
-
-_TEXT_PROBLEM_SUFFIXES = {".md", ".markdown", ".txt"}
-
-
-def _collect_problem_text(paths: ProjectPaths) -> str:
-    manifest = load_manifest(paths)
-    problem_files = [
-        paths.root / record.path
-        for record in manifest.inputs
-        if record.source_role is SourceRole.PROBLEM
-    ]
-    if not problem_files:
-        raise ValueError(
-            "no problem files ingested; run: mmos ingest <project> <file> --role problem"
-        )
-
-    sections: list[str] = []
-    for problem_file in problem_files:
-        if problem_file.suffix.lower() not in _TEXT_PROBLEM_SUFFIXES:
-            raise ValueError(
-                f"unsupported problem file type: {problem_file.name} "
-                "(Phase 3 accepts .md, .markdown, .txt; PDF/Word parsing comes later)"
-            )
-        sections.append(f"## {problem_file.name}\n\n{problem_file.read_text(encoding='utf-8')}")
-    return "\n\n".join(sections)
 
 
 app = typer.Typer(
@@ -245,7 +221,7 @@ def analyze_problem(
         raise typer.Exit(code=1)
 
     try:
-        problem_text = _collect_problem_text(paths)
+        problem_text = collect_problem_text(paths)
         model = build_model(get_settings())
     except (ValueError, MissingAPIKeyError, UnsupportedProviderError) as exc:
         console.print(f"Error: {exc}", style="red")
@@ -386,30 +362,16 @@ def run_experiment_command(
         console.print(f"Error: experiment spec not found: {spec_file}", style="red")
         raise typer.Exit(code=1)
 
-    snakemake = shutil.which("snakemake")
-    if snakemake is None:
-        console.print("Error: snakemake is not installed in this environment.", style="red")
-        raise typer.Exit(code=1)
-
-    workflow_file = Path("workflow/Snakefile")
-    if not workflow_file.exists():
-        console.print(f"Error: workflow file not found: {workflow_file}", style="red")
-        raise typer.Exit(code=1)
-
-    result = LocalExecutor(paths).run(
-        [
-            snakemake,
-            "-s",
-            str(workflow_file.resolve()),
-            "--cores",
-            "1",
-            "--config",
-            f"experiment_id={experiment_id}",
-        ],
-        cwd=paths.root,
-        timeout_seconds=timeout,
-        dry_run=dry_run,
-    )
+    try:
+        result = run_experiment_workflow(
+            paths,
+            experiment_id,
+            timeout_seconds=timeout,
+            dry_run=dry_run,
+        )
+    except (RuntimeError, FileNotFoundError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
 
     console.print(f"Execution: {result.execution_id}")
     console.print(f"Duration: {result.duration_seconds:.2f}s")
@@ -865,6 +827,14 @@ def plan_experiment(
         console.print(f"Error: {exc}", style="red")
         raise typer.Exit(code=1) from exc
 
+    non_executable = [model_id for model_id in spec.models if model_id not in EXECUTABLE_MODEL_IDS]
+    if non_executable:
+        console.print(
+            "Error: registered models without an executable engine: " + ", ".join(non_executable),
+            style="red",
+        )
+        raise typer.Exit(code=1)
+
     target_path = save_experiment_spec(paths, spec)
     console.print(f"Experiment: {spec.experiment_id}")
     console.print(f"Models: {', '.join(spec.models)}")
@@ -943,3 +913,75 @@ def redteam(
     if review.judge.blocking:
         console.print("Release blocked by unresolved critical issues.", style="red")
         raise typer.Exit(code=1)
+
+
+@app.command()
+def run(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    target: Annotated[str, typer.Option("--target", help="Target column.")],
+    features: Annotated[
+        list[str] | None,
+        typer.Option("--feature", help="Feature column; repeat for multiple."),
+    ] = None,
+    primary_metric: Annotated[
+        str, typer.Option("--primary-metric", help="Metric used for selection and figures.")
+    ] = "rmse",
+    higher_is_better: Annotated[
+        bool, typer.Option("--higher-is-better", help="Metric direction.")
+    ] = False,
+    metrics: Annotated[
+        list[str] | None,
+        typer.Option("--metric", help="Metric to compute; repeat to override defaults."),
+    ] = None,
+    n_splits: Annotated[int, typer.Option("--splits", help="Cross-validation folds.")] = 5,
+    seed: Annotated[int, typer.Option("--seed", help="Random seed.")] = 0,
+    timeout: Annotated[
+        float, typer.Option("--timeout", help="Workflow timeout in seconds.")
+    ] = 900.0,
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Run the full pipeline from problem analysis to a release summary."""
+    if not features:
+        console.print("Error: at least one --feature is required.", style="red")
+        raise typer.Exit(code=1)
+
+    paths = resolve_project(project, _projects_base(projects_dir))
+    options = PipelineOptions(
+        target=target,
+        features=features,
+        primary_metric=primary_metric,
+        higher_is_better=higher_is_better,
+        metrics=metrics,
+        n_splits=n_splits,
+        seed=seed,
+        timeout_seconds=timeout,
+    )
+
+    try:
+        summary = run_pipeline(paths, options)
+    except (
+        PipelineBlocked,
+        ValueError,
+        FileNotFoundError,
+        RuntimeError,
+        EvidenceError,
+        PaperError,
+        CouncilError,
+    ) as exc:
+        console.print(f"Pipeline stopped: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"Selected model: {summary.selected_model}")
+    console.print(
+        f"{summary.primary_metric}: {summary.metric_display_value} "
+        f"(challenger: {summary.challenger_model or '-'})"
+    )
+    console.print(f"Validation: {', '.join(sorted(summary.validation))}")
+    console.print(f"Red team: {summary.red_team_overall}")
+    console.print(
+        f"Claims: {len(summary.claim_ids)} registered, {summary.supported_claims} supported"
+    )
+    console.print(f"Paper: {paths.root / summary.paper_path}")
+    console.print(f"Release: {paths.releases_dir / (summary.release_id + '.md')}")

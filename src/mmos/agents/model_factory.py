@@ -23,18 +23,19 @@ def build_model(settings: Settings) -> Model:
         )
     api_key = settings.llm_api_key.get_secret_value()
 
+    # A bounded request timeout prevents a single stalled HTTP call from hanging a
+    # pipeline indefinitely; provider retries handle transient errors.
+    client = AsyncOpenAI(
+        api_key=api_key,
+        base_url=settings.llm_base_url,
+        timeout=settings.llm_timeout_seconds,
+    )
+
     if settings.llm_provider is LLMProviderName.DEEPSEEK:
-        if settings.llm_base_url:
-            provider = DeepSeekProvider(
-                openai_client=AsyncOpenAI(api_key=api_key, base_url=settings.llm_base_url)
-            )
-        else:
-            provider = DeepSeekProvider(api_key=api_key)
-        return OpenAIChatModel(settings.llm_model, provider=provider)
+        return OpenAIChatModel(settings.llm_model, provider=DeepSeekProvider(openai_client=client))
 
     if settings.llm_provider is LLMProviderName.OPENAI:
-        provider = OpenAIProvider(api_key=api_key, base_url=settings.llm_base_url)
-        return OpenAIChatModel(settings.llm_model, provider=provider)
+        return OpenAIChatModel(settings.llm_model, provider=OpenAIProvider(openai_client=client))
 
     raise UnsupportedProviderError(
         f"provider {settings.llm_provider.value!r} is not installed in this build; "

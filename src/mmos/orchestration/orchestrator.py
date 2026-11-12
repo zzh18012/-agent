@@ -10,7 +10,7 @@ from mmos.core.project import (
     load_project_config,
     save_project_config,
 )
-from mmos.core.state_machine import check_transition
+from mmos.core.state_machine import LINEAR_ORDER, NEXT_STATE, check_transition
 from mmos.schemas.project import InputFileRecord, ProjectConfig, SourceRole
 from mmos.schemas.state import StateTransitionRecord
 from mmos.schemas.states import ESCAPE_STATES, ProjectState
@@ -60,6 +60,26 @@ class Orchestrator:
             reason=reason,
         )
         return updated
+
+    def advance_to(self, target: ProjectState, *, reason: str) -> ProjectConfig:
+        """Bookkeeping helper: walk the linear lifecycle one legal step at a time.
+
+        It never skips a state, never leaves an escape state, and never moves backwards.
+        """
+        config = load_project_config(self.paths)
+        if config.state in ESCAPE_STATES or config.state not in LINEAR_ORDER:
+            raise ValueError(f"cannot advance from state {config.state.value}")
+        if target not in LINEAR_ORDER:
+            raise ValueError(f"cannot advance to non-linear state {target.value}")
+        if LINEAR_ORDER.index(target) <= LINEAR_ORDER.index(config.state):
+            return config
+
+        while config.state is not target:
+            next_state = NEXT_STATE.get(config.state)
+            if next_state is None:
+                raise ValueError(f"no path from {config.state.value} to {target.value}")
+            config = self.transition(next_state, reason=reason)
+        return config
 
     def _append_history(self, record: StateTransitionRecord) -> None:
         self.paths.state_history_file.parent.mkdir(parents=True, exist_ok=True)

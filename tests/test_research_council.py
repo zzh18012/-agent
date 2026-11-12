@@ -5,6 +5,7 @@ from pydantic_ai.models.test import TestModel
 from typer.testing import CliRunner
 
 from mmos.agents import CouncilError, ResearchAgent, normalize_decision, normalize_proposals
+from mmos.agents.catalog import EXECUTABLE_MODEL_IDS
 from mmos.cli.main import app
 from mmos.core.intake import ingest_files
 from mmos.core.project import create_project, save_proposals
@@ -122,6 +123,22 @@ def test_normalize_proposals_assigns_ids_and_drops_invalid(
     assert proposal.problem_id == "proj-1"
     assert proposal.registry_model_ids == ["sklearn.ridge"]
     assert len(notes) == 2
+
+
+def test_normalize_proposals_can_require_executable_engines(
+    registry: ModelRegistry, spec: ProblemSpec
+) -> None:
+    batch = ProposalBatch(proposals=[make_proposal(["statsmodels.ols", "sklearn.ridge"])])
+    proposals, notes = normalize_proposals(
+        batch,
+        ExpertRole.STATISTICIAN,
+        spec,
+        registry,
+        allowed_model_ids=EXECUTABLE_MODEL_IDS,
+    )
+    assert len(proposals) == 1
+    assert proposals[0].registry_model_ids == ["sklearn.ridge"]
+    assert notes == []
 
 
 def test_normalize_decision_filters_unknown_and_falls_back(

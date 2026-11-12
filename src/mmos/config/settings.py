@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     llm_api_key: SecretStr | None = None
     llm_base_url: str | None = None
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    llm_timeout_seconds: float = Field(default=120.0, gt=0)
 
     projects_dir: Path = Path("projects")
     logs_dir: Path = Path("logs")
