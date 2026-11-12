@@ -67,8 +67,22 @@ def test_forecasting_uses_time_series_split(registry: ModelRegistry) -> None:
     )
 
     assert spec.split_strategy == "rolling_origin"
-    assert spec.validation_strategy == "time_series_cross_validation"
-    assert spec.metrics == ["mae", "rmse", "mase"]
+    assert spec.validation_strategy == "rolling_origin"
+    assert spec.metrics == ["rmse", "mae", "r2", "mase"]
+
+
+def test_seasonal_model_requires_a_confirmed_period(registry: ModelRegistry) -> None:
+    from mmos.schemas.experiment import TemporalSplit
+
+    with pytest.raises(ValueError, match="seasonal"):
+        ExperimentPlanner(registry).plan(
+            make_proposal(["naive.seasonal"]),
+            dataset_hash=DATASET_HASH,
+            target_column="y",
+            feature_set=[],
+            temporal_split=TemporalSplit(horizon=1, min_train_size=20, step=1, n_splits=5),
+            time_column="period",
+        )
 
 
 def test_explicit_metrics_override_defaults(registry: ModelRegistry) -> None:

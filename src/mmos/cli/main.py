@@ -19,6 +19,7 @@ from mmos.agents import (
     ResearchAgent,
     UnsupportedProviderError,
     build_model,
+    release_allowed,
 )
 from mmos.agents.catalog import EXECUTABLE_MODEL_IDS
 from mmos.config import get_settings
@@ -910,8 +911,11 @@ def redteam(
     console.print(f"Overall: {review.judge.overall.value}")
     console.print(f"Blocking: {'yes' if review.judge.blocking else 'no'}")
     console.print(f"Saved: {target_path}")
-    if review.judge.blocking:
-        console.print("Release blocked by unresolved critical issues.", style="red")
+    if not release_allowed(review):
+        console.print(
+            f"Release blocked: judge overall is {review.judge.overall.value}; PASS required.",
+            style="red",
+        )
         raise typer.Exit(code=1)
 
 
@@ -935,6 +939,17 @@ def run(
     ] = None,
     n_splits: Annotated[int, typer.Option("--splits", help="Cross-validation folds.")] = 5,
     seed: Annotated[int, typer.Option("--seed", help="Random seed.")] = 0,
+    time_column: Annotated[
+        str | None, typer.Option("--time-column", help="Time column for temporal data.")
+    ] = None,
+    forecast_horizon: Annotated[
+        int | None,
+        typer.Option("--horizon", help="Forecast horizon; required for temporal data."),
+    ] = None,
+    seasonal_period: Annotated[
+        int | None,
+        typer.Option("--seasonal-period", help="Confirmed seasonal period, if any."),
+    ] = None,
     timeout: Annotated[
         float, typer.Option("--timeout", help="Workflow timeout in seconds.")
     ] = 900.0,
@@ -943,20 +958,19 @@ def run(
     ] = None,
 ) -> None:
     """Run the full pipeline from problem analysis to a release summary."""
-    if not features:
-        console.print("Error: at least one --feature is required.", style="red")
-        raise typer.Exit(code=1)
-
     paths = resolve_project(project, _projects_base(projects_dir))
     options = PipelineOptions(
         target=target,
-        features=features,
+        features=features or [],
         primary_metric=primary_metric,
         higher_is_better=higher_is_better,
         metrics=metrics,
         n_splits=n_splits,
         seed=seed,
         timeout_seconds=timeout,
+        time_column=time_column,
+        forecast_horizon=forecast_horizon,
+        seasonal_period=seasonal_period,
     )
 
     try:

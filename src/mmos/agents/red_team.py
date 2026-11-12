@@ -121,6 +121,10 @@ def normalize_judge(report: JudgeReport, attacks: list[Attack]) -> JudgeReport:
     )
 
 
+def release_allowed(review: RedTeamReview) -> bool:
+    return review.judge.overall is Verdict.PASS and not review.judge.blocking
+
+
 class RedTeam:
     def __init__(self, model: Model | str) -> None:
         self._attacker: Agent[None, AttackReport] = Agent(

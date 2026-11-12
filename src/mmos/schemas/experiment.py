@@ -1,10 +1,53 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from mmos.schemas.common import MMOSModel
+from mmos.schemas.metadata import TargetSummary
 from mmos.schemas.registry import TaskType
+
+
+class TemporalSplit(MMOSModel):
+    strategy: Literal["rolling_origin"] = "rolling_origin"
+    horizon: int = Field(ge=1)
+    min_train_size: int = Field(ge=2)
+    step: int = Field(ge=1)
+    n_splits: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def _windows_do_not_overlap(self) -> "TemporalSplit":
+        if self.step < self.horizon:
+            raise ValueError("step must be >= horizon so test windows do not overlap")
+        return self
+
+
+class FoldWindow(MMOSModel):
+    train_start: int
+    train_end: int
+    test_start: int
+    test_end: int
+
+    @model_validator(mode="after")
+    def _time_order_is_preserved(self) -> "FoldWindow":
+        if not (self.train_start < self.train_end <= self.test_start < self.test_end):
+            raise ValueError("fold must satisfy train_start < train_end <= test_start < test_end")
+        return self
+
+
+class MetricSummary(MMOSModel):
+    metric: str
+    point_estimate: float
+    fold_values: list[float] = Field(default_factory=list)
+    mean: float | None = None
+    std: float | None = None
+    median: float | None = None
+    min: float | None = None
+    max: float | None = None
+    confidence_interval_low: float | None = None
+    confidence_interval_high: float | None = None
+    n: int = 0
+    notes: str = ""
 
 
 class ExperimentSpec(MMOSModel):
@@ -16,7 +59,7 @@ class ExperimentSpec(MMOSModel):
     dataset_version: str | None = None
     dataset_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     target_column: str = Field(min_length=1)
-    feature_set: list[str] = Field(min_length=1)
+    feature_set: list[str] = Field(default_factory=list)
     split_strategy: str
     validation_strategy: str
     n_splits: int = Field(ge=2)
@@ -30,6 +73,9 @@ class ExperimentSpec(MMOSModel):
     failure_criteria: list[str] = Field(min_length=1)
     compute_requirements: str
     expected_runtime_class: Literal["seconds", "minutes", "hours"]
+    time_column: str | None = None
+    seasonal_period: int | None = Field(default=None, ge=2)
+    temporal_split: TemporalSplit | None = None
 
 
 class ExperimentResult(MMOSModel):
@@ -45,4 +91,11 @@ class ExperimentResult(MMOSModel):
     n_splits: int
     models: dict[str, dict[str, float]]
     fold_metrics: dict[str, list[dict[str, float]]] = Field(default_factory=dict)
+    metric_summaries: dict[str, dict[str, MetricSummary]] = Field(default_factory=dict)
+    fold_windows: list[FoldWindow] = Field(default_factory=list)
+    target_summary: TargetSummary | None = None
+    model_determinism: dict[str, bool] = Field(default_factory=dict)
+    feature_availability: dict[str, str] = Field(default_factory=dict)
+    dataset_metadata_sha256: str | None = None
+    evaluated_rows: int = 0
     generated_at: datetime

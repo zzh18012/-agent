@@ -16,7 +16,7 @@ from mmos.schemas.evidence import ClaimRecord, EvidenceIndex, EvidenceRecord
 from mmos.schemas.experiment import ExperimentResult
 from mmos.schemas.validation import ValidationReport, ValidationStatus
 
-REQUIRED_VALIDATORS = ("leakage", "numerical", "statistical", "reproducibility")
+REQUIRED_VALIDATORS = ("leakage", "numerical", "statistical", "reproducibility", "temporal")
 
 
 class EvidenceError(RuntimeError):
@@ -121,6 +121,8 @@ def freeze_experiment(paths: ProjectPaths, experiment_id: str) -> list[EvidenceR
         ),
         "mlflow_run_id": mlflow_run_id,
     }
+    if result.dataset_metadata_sha256:
+        provenance["dataset_metadata_sha256"] = result.dataset_metadata_sha256
 
     records: list[EvidenceRecord] = []
     for model_id, metrics in result.models.items():
@@ -140,6 +142,166 @@ def freeze_experiment(paths: ProjectPaths, experiment_id: str) -> list[EvidenceR
                     provenance=provenance,
                 )
             )
+
+    def extra_record(
+        evidence_id: str,
+        key: str,
+        raw_value: float | int | str,
+        display_value: str,
+        source_field: str,
+    ) -> EvidenceRecord:
+        return EvidenceRecord(
+            evidence_id=evidence_id,
+            key=key,
+            raw_value=raw_value,
+            display_value=display_value,
+            experiment_id=experiment_id,
+            artifact_path=relative_metrics,
+            artifact_hash=metrics_hash,
+            source_field=source_field,
+            validation_reports=[report.validator for report in reports],
+            verified_at=now,
+            provenance=provenance,
+        )
+
+    def display(value: object) -> str:
+        return f"{value:.6g}" if isinstance(value, float) else str(value)
+
+    if result.target_summary is not None:
+        target = result.target_summary
+        for field in (
+            "mean",
+            "std",
+            "min",
+            "max",
+            "median",
+            "unit",
+            "unit_status",
+            "dtype",
+            "description",
+            "generator",
+            "generation_seed",
+            "generation_code_path",
+            "generation_parameters",
+            "is_synthetic",
+            "is_positive",
+        ):
+            value = getattr(target, field)
+            if value is None:
+                continue
+            raw = value.value if hasattr(value, "value") else value
+            if isinstance(raw, bool):
+                raw = str(raw).lower()
+            records.append(
+                extra_record(
+                    f"ev-{experiment_id}-target-{field}",
+                    f"target.{field}",
+                    raw,
+                    display(raw),
+                    f"target_summary.{field}",
+                )
+            )
+
+    if spec.temporal_split is not None:
+        split = spec.temporal_split
+        temporal_values: dict[str, float | int | str] = {
+            "strategy": split.strategy,
+            "horizon": split.horizon,
+            "min_train_size": split.min_train_size,
+            "step": split.step,
+            "n_splits": split.n_splits,
+        }
+        if spec.time_column is not None:
+            temporal_values["time_column"] = spec.time_column
+        if spec.seasonal_period is not None:
+            temporal_values["seasonal_period"] = spec.seasonal_period
+        for name, value in temporal_values.items():
+            records.append(
+                extra_record(
+                    f"ev-{experiment_id}-temporal-{name}",
+                    f"temporal.{name}",
+                    value,
+                    display(value),
+                    f"temporal_split.{name}",
+                )
+            )
+        if result.fold_windows:
+            windows = "; ".join(
+                f"train[0,{window.train_end}) test[{window.test_start},{window.test_end})"
+                for window in result.fold_windows
+            )
+            records.append(
+                extra_record(
+                    f"ev-{experiment_id}-temporal-fold-windows",
+                    "temporal.fold_windows",
+                    windows,
+                    windows,
+                    "fold_windows",
+                )
+            )
+
+    for model_id, deterministic in result.model_determinism.items():
+        value = "deterministic" if deterministic else "stochastic"
+        records.append(
+            extra_record(
+                f"ev-{experiment_id}-determinism-{model_id}",
+                f"determinism.{model_id}",
+                value,
+                value,
+                f"model_determinism.{model_id}",
+            )
+        )
+
+    records.append(
+        extra_record(
+            f"ev-{experiment_id}-evaluation-rows",
+            "evaluation.unique_rows",
+            result.evaluated_rows,
+            display(result.evaluated_rows),
+            "evaluated_rows",
+        )
+    )
+
+    for model_id, summaries in result.metric_summaries.items():
+        for metric_name, summary in summaries.items():
+            if summary.fold_values:
+                fold_text = ", ".join(f"{value:.10g}" for value in summary.fold_values)
+                records.append(
+                    extra_record(
+                        f"ev-{experiment_id}-uncertainty-{model_id}-{metric_name}-folds",
+                        f"uncertainty.{model_id}.{metric_name}.folds",
+                        fold_text,
+                        fold_text,
+                        f"metric_summaries.{model_id}.{metric_name}.fold_values",
+                    )
+                )
+            for field, value in (
+                ("std", summary.std),
+                ("ci_low", summary.confidence_interval_low),
+                ("ci_high", summary.confidence_interval_high),
+            ):
+                if value is None:
+                    continue
+                records.append(
+                    extra_record(
+                        f"ev-{experiment_id}-uncertainty-{model_id}-{metric_name}-{field}",
+                        f"uncertainty.{model_id}.{metric_name}.{field}",
+                        value,
+                        display(value),
+                        f"metric_summaries.{model_id}.{metric_name}.{field}",
+                    )
+                )
+
+    for feature, availability in result.feature_availability.items():
+        records.append(
+            extra_record(
+                f"ev-{experiment_id}-feature-{feature}-availability",
+                f"feature.{feature}.availability",
+                availability,
+                availability,
+                f"feature_availability.{feature}",
+            )
+        )
 
     verified = _verified_dir(paths)
     index = load_evidence_index(paths)

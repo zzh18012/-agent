@@ -17,6 +17,7 @@ rule all:
 
 
 rule data_gate:
+    retries: 1
     output:
         GATE,
     log:
@@ -26,6 +27,7 @@ rule data_gate:
 
 
 rule run_experiment:
+    retries: 1
     input:
         GATE,
     output:

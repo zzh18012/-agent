@@ -83,7 +83,12 @@ def validate_reproducibility(paths: ProjectPaths, experiment_id: str) -> Validat
                 "prediction_coverage_mismatch",
                 "not every row has exactly one prediction per model",
             )
-        expected_rows = load_single_table(paths).height
+        if spec.temporal_split is not None:
+            expected_rows = sum(
+                window.test_end - window.test_start for window in result.fold_windows
+            )
+        else:
+            expected_rows = load_single_table(paths).height
         predicted_rows = predictions["row_index"].n_unique()
         if predicted_rows != expected_rows:
             error(

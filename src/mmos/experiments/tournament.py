@@ -76,7 +76,8 @@ class Tournament:
             if self.registry.get(entry.model_id).is_baseline
         }
         notes = [
-            "selection is provisional until robustness, sensitivity, and validation gates pass"
+            "selection is based on executed metrics; robustness and sensitivity "
+            "analyses are not part of this comparison"
         ]
 
         if not baseline_ids:

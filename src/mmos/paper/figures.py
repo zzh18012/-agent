@@ -1,4 +1,5 @@
 import json
+import math
 from datetime import UTC, datetime
 
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -18,6 +19,7 @@ def create_metric_figure(
     *,
     higher_is_better: bool,
     records: list[EvidenceRecord],
+    fold_values: dict[str, list[float]] | None = None,
 ) -> PaperFigure:
     """Render a bar chart from verified evidence only.
 
@@ -34,12 +36,48 @@ def create_metric_figure(
     figure = Figure(figsize=(7, 4))
     FigureCanvasAgg(figure)
     axis = figure.subplots()
-    bars = axis.bar(labels, values, color="#3b6ea5")
-    axis.set_ylabel(metric)
     direction = "higher is better" if higher_is_better else "lower is better"
     axis.set_title(f"{metric} by model ({direction})")
-    axis.bar_label(bars, labels=[record.display_value for record in ordered], padding=2)
-    figure.autofmt_xdate(rotation=20, ha="right")
+    axis.set_ylabel(metric)
+    fold_note = ""
+    if fold_values:
+        positions = list(range(len(ordered)))
+        for position, record, value in zip(positions, ordered, values, strict=True):
+            model_id = record.key.removeprefix("metrics.").removesuffix(f".{metric}")
+            folds = fold_values.get(model_id, [])
+            deviation = (
+                math.sqrt(sum((item - value) ** 2 for item in folds) / (len(folds) - 1))
+                if len(folds) > 1
+                else 0.0
+            )
+            axis.errorbar(
+                position,
+                value,
+                yerr=deviation,
+                fmt="o",
+                color="#3b6ea5",
+                capsize=4,
+                zorder=3,
+            )
+            if folds:
+                axis.scatter(
+                    [position] * len(folds),
+                    folds,
+                    color="#d07b3b",
+                    alpha=0.75,
+                    s=18,
+                    zorder=2,
+                )
+        axis.set_xticks(positions, labels, rotation=20, ha="right")
+        fold_sizes = {len(items) for items in fold_values.values() if items}
+        fold_note = (
+            f" Bars show fold standard deviation; dots show individual folds"
+            f" (N={max(fold_sizes) if fold_sizes else 0})."
+        )
+    else:
+        bars = axis.bar(labels, values, color="#3b6ea5")
+        axis.bar_label(bars, labels=[record.display_value for record in ordered], padding=2)
+        figure.autofmt_xdate(rotation=20, ha="right")
     figure.tight_layout()
 
     figures_dir = paths.verified_dir / "figures"
@@ -54,7 +92,7 @@ def create_metric_figure(
         hashes[file_format] = sha256_file(target)
     figure.clear()
 
-    caption = f"Cross-validated {metric} by model ({direction})."
+    caption = f"Out-of-fold {metric} by model ({direction}).{fold_note}"
     spec = FigureSpec(
         figure_id=figure_id,
         caption=caption,

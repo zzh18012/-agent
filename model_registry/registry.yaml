@@ -141,6 +141,17 @@ models:
     known_failure_modes: [no seasonality, no trend]
     is_baseline: true
 
+  - model_id: naive.drift
+    name: Drift forecast (baseline)
+    task_types: [forecasting]
+    description: Extrapolates the line from the first to the last training observation.
+    required_packages: []
+    interpretability: high
+    compute_class: tiny
+    recommended_validation: rolling-origin evaluation
+    known_failure_modes: [unstable slope on short series, ignores seasonality]
+    is_baseline: true
+
   - model_id: naive.seasonal
     name: Seasonal naive forecast (baseline)
     task_types: [forecasting]

@@ -75,7 +75,8 @@ def test_snakemake_workflow_runs_gate_then_experiment(tmp_path: Path) -> None:
             break
         # Windows can fail to spawn the rule subprocess with WinError 8 under
         # resource pressure. Retry once only for that observed OS-level error.
-        if "WinError 8" not in stderr or attempt == 1:
+        transient = "WinError 8" in stderr or "3221226505" in stderr
+        if not transient or attempt == 1:
             assert result.succeeded(), f"snakemake failed\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
 
     artifacts = paths.experiments_dir / spec.experiment_id / "artifacts"

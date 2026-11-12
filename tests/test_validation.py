@@ -37,6 +37,7 @@ def test_clean_experiment_passes_all_validators_and_cli(tmp_path: Path) -> None:
         "numerical",
         "statistical",
         "reproducibility",
+        "temporal",
     }
     assert all(not report.blocking for report in reports)
     summary = json.loads(

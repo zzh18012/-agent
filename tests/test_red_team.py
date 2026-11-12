@@ -2,7 +2,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from mmos.agents import normalize_attacks, normalize_judge, normalize_responses
+from mmos.agents import normalize_attacks, normalize_judge, normalize_responses, release_allowed
 from mmos.cli.main import app
 from mmos.core.project import create_project
 from mmos.schemas.review import (
@@ -15,6 +15,7 @@ from mmos.schemas.review import (
     AuthorResponse,
     AuthorResponseReport,
     JudgeReport,
+    RedTeamReview,
     Verdict,
 )
 
@@ -104,3 +105,18 @@ def test_redteam_cli_requires_evidence(tmp_path: Path) -> None:
     )
     assert result.exit_code == 1
     assert "no verified evidence" in result.output
+
+
+def test_release_requires_judge_pass() -> None:
+    def review(overall: Verdict) -> RedTeamReview:
+        return RedTeamReview(
+            experiment_id="exp",
+            attacks=AttackReport(attacks=[]),
+            responses=AuthorResponseReport(responses=[]),
+            judge=JudgeReport(verdicts=[], overall=overall, blocking=False),
+            created_at=__import__("datetime").datetime.now(__import__("datetime").UTC),
+        )
+
+    assert release_allowed(review(Verdict.PASS)) is True
+    assert release_allowed(review(Verdict.REVISE)) is False
+    assert release_allowed(review(Verdict.REJECT)) is False

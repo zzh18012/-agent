@@ -11,7 +11,13 @@ from mmos.agents.model_factory import (
     build_model,
 )
 from mmos.agents.problem_analyst import ProblemAnalyst
-from mmos.agents.red_team import RedTeam, normalize_attacks, normalize_judge, normalize_responses
+from mmos.agents.red_team import (
+    RedTeam,
+    normalize_attacks,
+    normalize_judge,
+    normalize_responses,
+    release_allowed,
+)
 from mmos.agents.research_agent import ResearchAgent
 
 __all__ = [
@@ -29,4 +35,5 @@ __all__ = [
     "normalize_judge",
     "normalize_proposals",
     "normalize_responses",
+    "release_allowed",
 ]

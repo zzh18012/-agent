@@ -9,12 +9,15 @@ from mmos.schemas.common import MMOSModel
 class PipelineState(MMOSModel):
     schema_version: Literal[1] = 1
     target_column: str
-    feature_set: list[str] = Field(min_length=1)
+    feature_set: list[str] = Field(default_factory=list)
     primary_metric: str
     higher_is_better: bool
     metrics: list[str] | None = None
     n_splits: int
     random_seed: int
+    time_column: str | None = None
+    forecast_horizon: int | None = None
+    seasonal_period: int | None = None
     experiment_id: str | None = None
     tournament_id: str | None = None
 

@@ -33,7 +33,8 @@ This repository is under phased construction. See `docs/progress/` for what is r
 | 11 | Verified evidence store, artifact hashes, provenance, claims, freeze gate | done |
 | 12 | Paper AST, evidence-grounded tables/figures, Markdown renderer | done |
 | 13 | Red Team attack, author response, judge verdict with conservative aggregation | done (live-verified) |
-| 14 | Automated `mmos run` pipeline, release gate, blocked-release handoff | implemented; demo was correctly blocked by red team |
+| 14 | Automated `mmos run` pipeline, release gate, blocked-release handoff | implemented |
+| 15 | Scientific hardening: target/temporal metadata, rolling-origin validation, naive baselines, MASE, uncertainty | implemented; final demo correctly held at REQUIRES_HUMAN_REVIEW (judge=revise) |
 
 Nothing in the README should be read as a claim that later phases are implemented.
 
@@ -118,8 +119,48 @@ uv run mmos redteam <project_id> <experiment_id> [--tournament <tournament_id>]
 
 # full pipeline: analyze -> research -> council -> experiment -> evidence -> paper -> red team
 uv run mmos run <project_id> --target <column> --feature <column> --feature <column>
+
+# temporal data: rolling-origin evaluation with naive baselines (horizon required)
+uv run mmos run <project_id> --target y --feature x1 --feature x2 \n  --time-column period --horizon 1 --primary-metric rmse
 ```
 
+
+## Dataset metadata (optional sidecar)
+
+Ingest a `dataset_metadata.json` as an attachment to declare provenance and time
+structure. Statistics are always computed from the real data, never guessed by an LLM.
+
+```json
+{
+  "target_name": "y",
+  "target_description": "demand per period",
+  "target_unit": null,
+  "unit_status": "synthetic_units",
+  "temporal": {
+    "is_temporal": true,
+    "time_column": "period",
+    "forecast_horizon": 1,
+    "seasonal_period": null,
+    "ordering_required": true
+  },
+  "features": [
+    {"name": "x1", "availability": "known_future"},
+    {"name": "x2", "availability": "known_future"}
+  ],
+  "provenance": {
+    "is_synthetic": true,
+    "generator": "linear_demand_generator_v1",
+    "generation_parameters": {"periods": 60},
+    "seed": 20261112,
+    "code_path": "examples/linear_demand/generate.py"
+  }
+}
+```
+
+Temporal datasets use rolling-origin validation; random KFold is rejected by the
+temporal validator, and a naive/drift baseline is required. If the horizon is unknown,
+the pipeline stops instead of guessing. The paper reports target unit status, descriptive
+statistics, `RMSE / target_std`, MASE, fold variability, and bootstrap intervals.
 
 ## Concepts
 

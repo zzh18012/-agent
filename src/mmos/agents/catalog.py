@@ -1,7 +1,7 @@
-from mmos.experiments.engines import ENGINES
+from mmos.experiments.engines import ENGINES, TEMPORAL_BASELINES
 from mmos.registries import ModelRegistry
 
-EXECUTABLE_MODEL_IDS = frozenset(ENGINES)
+EXECUTABLE_MODEL_IDS = frozenset(ENGINES) | TEMPORAL_BASELINES
 
 
 def registry_catalog(registry: ModelRegistry) -> str:

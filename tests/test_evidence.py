@@ -53,7 +53,10 @@ def test_freeze_writes_hashed_evidence_and_claims(tmp_path: Path) -> None:
 
     records = freeze_experiment(paths, spec.experiment_id)
 
-    assert len(records) == 2 * 2
+    metric_records = [record for record in records if record.key.startswith("metrics.")]
+    assert len(metric_records) == 2 * 3  # rmse, mae, rmse_std_ratio per model
+    assert any(record.key.startswith("target.") for record in records)
+    assert any(record.key.startswith("uncertainty.") for record in records)
     metrics_hash = sha256_file(
         paths.experiment_dir(spec.experiment_id) / "artifacts" / "metrics.json"
     )

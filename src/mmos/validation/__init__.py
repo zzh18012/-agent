@@ -7,6 +7,7 @@ from mmos.validation.leakage import validate_leakage
 from mmos.validation.numerical import validate_numerical
 from mmos.validation.reproducibility import validate_reproducibility
 from mmos.validation.statistical import validate_statistical
+from mmos.validation.temporal import validate_temporal
 
 Validator = Callable[[ProjectPaths, str], ValidationReport]
 
@@ -15,6 +16,7 @@ VALIDATORS: dict[str, Validator] = {
     "numerical": validate_numerical,
     "statistical": validate_statistical,
     "reproducibility": validate_reproducibility,
+    "temporal": validate_temporal,
 }
 
 

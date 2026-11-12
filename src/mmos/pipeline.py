@@ -11,6 +11,7 @@ from mmos.agents import (
     RedTeam,
     ResearchAgent,
     build_model,
+    release_allowed,
 )
 from mmos.agents.catalog import EXECUTABLE_MODEL_IDS
 from mmos.config import get_settings
@@ -42,6 +43,8 @@ from mmos.core.project import (
 )
 from mmos.core.state_machine import LINEAR_ORDER
 from mmos.data import DataAgent
+from mmos.data.metadata import load_dataset_metadata
+from mmos.data.table import load_single_table
 from mmos.evidence import (
     add_claim,
     freeze_experiment,
@@ -54,7 +57,7 @@ from mmos.experiments.workflow import run_experiment_workflow
 from mmos.orchestration import Orchestrator
 from mmos.paper import build_paper, render_paper
 from mmos.registries import ModelRegistry
-from mmos.schemas.experiment import ExperimentResult
+from mmos.schemas.experiment import ExperimentResult, TemporalSplit
 from mmos.schemas.pipeline import PipelineState, ReleaseSummary
 from mmos.schemas.proposal import CouncilDecision, CritiqueReport, ModelProposal
 from mmos.schemas.states import ESCAPE_STATES, ProjectState
@@ -77,6 +80,9 @@ class PipelineOptions:
     n_splits: int = 5
     seed: int = 0
     timeout_seconds: float = 900.0
+    time_column: str | None = None
+    forecast_horizon: int | None = None
+    seasonal_period: int | None = None
 
 
 def select_model_ids(decision: CouncilDecision, proposals: list[ModelProposal]) -> list[str]:
@@ -113,6 +119,9 @@ def _load_or_create_state(paths: ProjectPaths, options: PipelineOptions) -> Pipe
             metrics=options.metrics,
             n_splits=options.n_splits,
             random_seed=options.seed,
+            time_column=options.time_column,
+            forecast_horizon=options.forecast_horizon,
+            seasonal_period=options.seasonal_period,
         )
         save_pipeline_state(paths, state)
         return state
@@ -125,6 +134,9 @@ def _load_or_create_state(paths: ProjectPaths, options: PipelineOptions) -> Pipe
         options.metrics,
         options.n_splits,
         options.seed,
+        options.time_column,
+        options.forecast_horizon,
+        options.seasonal_period,
     )
     actual = (
         state.target_column,
@@ -134,6 +146,9 @@ def _load_or_create_state(paths: ProjectPaths, options: PipelineOptions) -> Pipe
         state.metrics,
         state.n_splits,
         state.random_seed,
+        state.time_column,
+        state.forecast_horizon,
+        state.seasonal_period,
     )
     if expected != actual:
         raise ValueError(
@@ -141,6 +156,57 @@ def _load_or_create_state(paths: ProjectPaths, options: PipelineOptions) -> Pipe
             "use a fresh project or remove manifests/pipeline_state.json deliberately"
         )
     return state
+
+
+@dataclass(frozen=True)
+class TemporalPlan:
+    time_column: str
+    split: TemporalSplit
+    baseline_model_ids: list[str]
+    seasonal_period: int | None
+
+
+def _resolve_temporal(paths: ProjectPaths, options: PipelineOptions) -> TemporalPlan | None:
+    metadata = load_dataset_metadata(paths)
+    declared = metadata.temporal if metadata is not None else None
+    time_column = options.time_column or (
+        declared.time_column if declared is not None and declared.is_temporal else None
+    )
+    if time_column is None:
+        return None
+    horizon = options.forecast_horizon or (
+        declared.forecast_horizon if declared is not None and declared.is_temporal else None
+    )
+    seasonal_period = options.seasonal_period or (
+        declared.seasonal_period if declared is not None else None
+    )
+    if horizon is None:
+        raise PipelineBlocked(
+            "temporal data requires an explicit forecast horizon; pass --horizon "
+            "(the system will not guess it)"
+        )
+    n_rows = load_single_table(paths).height
+    step = horizon
+    min_train_size = n_rows - options.n_splits * step
+    if min_train_size < 10:
+        raise PipelineBlocked(
+            f"not enough rows for {options.n_splits} rolling folds with horizon {horizon}"
+        )
+    split = TemporalSplit(
+        horizon=horizon,
+        min_train_size=min_train_size,
+        step=step,
+        n_splits=options.n_splits,
+    )
+    baselines = ["naive.last_value", "naive.drift"]
+    if seasonal_period is not None and seasonal_period <= min_train_size // 2:
+        baselines.append("naive.seasonal")
+    return TemporalPlan(
+        time_column=time_column,
+        split=split,
+        baseline_model_ids=baselines,
+        seasonal_period=seasonal_period,
+    )
 
 
 def _release_markdown(summary: ReleaseSummary) -> str:
@@ -201,6 +267,7 @@ def run_pipeline(
         raise ValueError("project has no ingested inputs; run mmos init and mmos ingest first")
 
     pipeline = _load_or_create_state(paths, options)
+    temporal = _resolve_temporal(paths, options)
 
     if config.state is ProjectState.PROJECT_INGESTED:
         log.info("pipeline_stage", stage="problem_analysis")
@@ -255,7 +322,9 @@ def run_pipeline(
             for model_id in select_model_ids(decision, proposals)
             if model_id in EXECUTABLE_MODEL_IDS
         ]
-        if not model_ids:
+        if temporal is not None and temporal.seasonal_period is None:
+            model_ids = [model_id for model_id in model_ids if model_id != "naive.seasonal"]
+        if not model_ids and temporal is None:
             raise PipelineBlocked("council selected no executable model")
         base_proposal = next(
             proposal
@@ -270,7 +339,11 @@ def run_pipeline(
             metrics=options.metrics,
             n_splits=options.n_splits,
             random_seed=options.seed,
-            include_baseline=True,
+            include_baseline=temporal is None,
+            baseline_model_ids=temporal.baseline_model_ids if temporal else None,
+            temporal_split=temporal.split if temporal else None,
+            time_column=temporal.time_column if temporal else None,
+            seasonal_period=temporal.seasonal_period if temporal else None,
         )
         save_experiment_spec(paths, spec)
         pipeline = pipeline.model_copy(update={"experiment_id": spec.experiment_id})
@@ -401,7 +474,7 @@ def run_pipeline(
         review = RedTeam(get_model()).run(paper_ast, experiment_id=experiment_id)
         save_red_team_review(paths, review)
 
-    if review.judge.blocking:
+    if not release_allowed(review):
         verdicts = {verdict.attack_id: verdict for verdict in review.judge.verdicts}
         lines = [
             "# Release blocked — human review required",
@@ -426,8 +499,11 @@ def run_pipeline(
             paths.reviews_dir / f"blocked_release_{experiment_id}.md",
             "\n".join(lines),
         )
-        _escape(paths, "pipeline: red team blocking")
-        raise PipelineBlocked("red team blocked release with unresolved critical attacks")
+        _escape(paths, "pipeline: red team did not pass")
+        raise PipelineBlocked(
+            "red team did not pass; release requires judge=PASS "
+            f"(got overall={review.judge.overall.value})"
+        )
 
     state = load_project_config(paths).state
     if _rank(state) < _rank(ProjectState.READY_FOR_RELEASE):

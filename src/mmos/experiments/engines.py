@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from typing import Any
 
+import numpy as np
 from sklearn.dummy import DummyRegressor
 from sklearn.ensemble import (
     HistGradientBoostingRegressor,
@@ -10,6 +11,15 @@ from sklearn.ensemble import (
 from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge
 
 from mmos.schemas.registry import TaskType
+
+TEMPORAL_BASELINES = frozenset({"naive.last_value", "naive.drift", "naive.seasonal"})
+STOCHASTIC_MODEL_IDS = frozenset(
+    {
+        "sklearn.random_forest_regressor",
+        "sklearn.random_forest_classifier",
+        "sklearn.hist_gradient_boosting_regressor",
+    }
+)
 
 EstimatorFactory = Callable[[int], Any]
 
@@ -75,3 +85,36 @@ def build_estimator(model_id: str, *, random_state: int) -> Any:
             f"available: {', '.join(sorted(ENGINES))}"
         ) from None
     return factory(random_state)
+
+
+def is_stochastic(model_id: str) -> bool:
+    return model_id in STOCHASTIC_MODEL_IDS
+
+
+def forecast_baseline(
+    model_id: str,
+    y_train: np.ndarray,
+    horizon: int,
+    seasonal_period: int | None,
+) -> np.ndarray:
+    if len(y_train) == 0:
+        raise ValueError("temporal baseline needs at least one training observation")
+    steps = np.arange(1, horizon + 1, dtype=float)
+    if model_id == "naive.last_value":
+        return np.full(horizon, float(y_train[-1]))
+    if model_id == "naive.drift":
+        if len(y_train) < 2:
+            return np.full(horizon, float(y_train[-1]))
+        slope = (float(y_train[-1]) - float(y_train[0])) / (len(y_train) - 1)
+        return float(y_train[-1]) + steps * slope
+    if model_id == "naive.seasonal":
+        if seasonal_period is None:
+            raise ValueError("seasonal naive requires a confirmed seasonal_period")
+        if len(y_train) < seasonal_period:
+            raise ValueError("seasonal naive needs at least one full season in training")
+        indices = [
+            len(y_train) - seasonal_period + ((step - 1) % seasonal_period)
+            for step in range(1, horizon + 1)
+        ]
+        return np.array([float(y_train[index]) for index in indices])
+    raise ValueError(f"{model_id!r} is not a temporal baseline")
