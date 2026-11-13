@@ -14,7 +14,7 @@ from mmos.core.project import (
 from mmos.experiments.runner import run_experiment
 from mmos.orchestration import Orchestrator
 from mmos.schemas.experiment import ExperimentSpec
-from mmos.schemas.states import ProjectState
+from mmos.schemas.states import ProjectState, TaskFamily
 from tests.helpers import make_experiment_project, regression_frame
 
 runner = CliRunner()
@@ -231,3 +231,22 @@ def test_init_ingest_and_status_flow(tmp_path) -> None:
     status_result = runner.invoke(app, ["status", project_id, "--projects-dir", str(tmp_path)])
     assert status_result.exit_code == 0, status_result.stdout
     assert "PROJECT_INGESTED" in status_result.stdout
+
+
+def test_init_with_optimization_task(tmp_path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            "Opt Project",
+            "--task",
+            "optimization",
+            "--projects-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    project_dir = next(path for path in tmp_path.iterdir() if path.is_dir())
+    config = load_project_config(ProjectPaths(project_dir))
+    assert config.task is TaskFamily.OPTIMIZATION

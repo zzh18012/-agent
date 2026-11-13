@@ -1,6 +1,20 @@
 from enum import StrEnum
 
 
+class TaskFamily(StrEnum):
+    PREDICTION = "prediction"
+    FORECASTING = "forecasting"
+    OPTIMIZATION = "optimization"
+    MULTI_OBJECTIVE = "multi_objective"
+    SIMULATION = "simulation"
+    GRAPH = "graph"
+
+
+SUPPORTED_TASKS = frozenset(
+    {TaskFamily.PREDICTION, TaskFamily.FORECASTING, TaskFamily.OPTIMIZATION}
+)
+
+
 class ProjectState(StrEnum):
     INIT = "INIT"
     PROJECT_INGESTED = "PROJECT_INGESTED"

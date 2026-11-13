@@ -1,13 +1,32 @@
 import itertools
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
-from mmos.core.project import create_project, save_optimization_spec
+import pytest
+from typer.testing import CliRunner
+
+from mmos.cli.main import app
+from mmos.core.project import (
+    create_project,
+    load_project_config,
+    save_optimization_spec,
+)
 from mmos.evidence import freeze_optimization, load_evidence_index
 from mmos.experiments.optimization_runner import run_optimization, solve_greedy, solve_ortools
+from mmos.orchestration import Orchestrator
 from mmos.paper import render_markdown
 from mmos.paper.optimization_builder import build_optimization_paper
-from mmos.schemas.optimization import OptimizationSpec
+from mmos.schemas.optimization import OptimizationSpec, relative_improvement
+from mmos.schemas.project import SourceRole
+from mmos.schemas.review import (
+    AttackReport,
+    AuthorResponseReport,
+    JudgeReport,
+    RedTeamReview,
+    Verdict,
+)
+from mmos.schemas.states import ProjectState, TaskFamily
 from mmos.validation.optimization import (
     validate_optimization,
     validate_optimization_experiment,
@@ -111,3 +130,99 @@ def test_tampered_objective_is_blocking(tmp_path: Path) -> None:
 
     assert report.blocking is True
     assert any(issue.code == "objective_mismatch" for issue in report.issues)
+
+
+def test_relative_improvement_follows_objective_direction() -> None:
+    assert relative_improvement("maximize", 360.0, 350.0) == pytest.approx(10.0 / 350.0)
+    assert relative_improvement("maximize", 340.0, 350.0) < 0
+    assert relative_improvement("minimize", 90.0, 100.0) == pytest.approx(0.1)
+    assert relative_improvement("minimize", 110.0, 100.0) < 0
+
+
+def test_optimize_cli_enters_shared_lifecycle(tmp_path, monkeypatch) -> None:
+    spec = load_spec()
+    projects_dir = tmp_path / "projects"
+    paths, _ = create_project(projects_dir, "opt-e2e", task=TaskFamily.OPTIMIZATION)
+    problem = tmp_path / "problem.md"
+    problem.write_text("# Knapsack\n", encoding="utf-8")
+    orchestrator = Orchestrator(paths)
+    orchestrator.ingest([problem], SourceRole.PROBLEM)
+    orchestrator.transition(ProjectState.PROBLEM_UNDERSTOOD, reason="test")
+
+    class FakeRedTeam:
+        def __init__(self, model) -> None:
+            pass
+
+        def run(self, paper, *, experiment_id: str) -> RedTeamReview:
+            return RedTeamReview(
+                experiment_id=experiment_id,
+                attacks=AttackReport(attacks=[]),
+                responses=AuthorResponseReport(responses=[]),
+                judge=JudgeReport(verdicts=[], overall=Verdict.PASS, blocking=False),
+                created_at=datetime.now(UTC),
+            )
+
+    monkeypatch.setattr("mmos.cli.main._model_or_exit", lambda: "fake")
+    monkeypatch.setattr("mmos.cli.main.RedTeam", FakeRedTeam)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "optimize",
+            paths.root.name,
+            str(SPEC_PATH),
+            "--projects-dir",
+            str(projects_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert load_project_config(paths).state is ProjectState.RELEASED
+    assert (paths.releases_dir / f"optimization_{spec.experiment_id}.md").exists()
+    history = paths.state_history_file.read_text(encoding="utf-8")
+    assert "RED_TEAM_REVIEW" in history
+    assert "RELEASED" in history
+
+
+def test_blocked_optimization_enters_human_review(tmp_path, monkeypatch) -> None:
+    spec = load_spec()
+    projects_dir = tmp_path / "projects"
+    paths, _ = create_project(projects_dir, "opt-blocked", task=TaskFamily.OPTIMIZATION)
+    problem = tmp_path / "problem-blocked.md"
+    problem.write_text("# Knapsack\n", encoding="utf-8")
+    orchestrator = Orchestrator(paths)
+    orchestrator.ingest([problem], SourceRole.PROBLEM)
+    orchestrator.transition(ProjectState.PROBLEM_UNDERSTOOD, reason="test")
+
+    class ReviseRedTeam:
+        def __init__(self, model) -> None:
+            pass
+
+        def run(self, paper, *, experiment_id: str) -> RedTeamReview:
+            return RedTeamReview(
+                experiment_id=experiment_id,
+                attacks=AttackReport(attacks=[]),
+                responses=AuthorResponseReport(responses=[]),
+                judge=JudgeReport(verdicts=[], overall=Verdict.REVISE, blocking=False),
+                created_at=datetime.now(UTC),
+            )
+
+    monkeypatch.setattr("mmos.cli.main._model_or_exit", lambda: "fake")
+    monkeypatch.setattr("mmos.cli.main.RedTeam", ReviseRedTeam)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "optimize",
+            paths.root.name,
+            str(SPEC_PATH),
+            "--projects-dir",
+            str(projects_dir),
+        ],
+    )
+
+    assert result.exit_code == 1
+    config = load_project_config(paths)
+    assert config.state is ProjectState.REQUIRES_HUMAN_REVIEW
+    assert config.resume_state is ProjectState.RED_TEAM_REVIEW
+    assert not (paths.releases_dir / f"optimization_{spec.experiment_id}.md").exists()

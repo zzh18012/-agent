@@ -10,7 +10,7 @@ from mmos.core.project import (
     load_project_config,
     save_project_config,
 )
-from mmos.core.state_machine import LINEAR_ORDER, NEXT_STATE, check_transition
+from mmos.core.state_machine import check_transition, task_order, task_transition_table
 from mmos.schemas.project import InputFileRecord, ProjectConfig, SourceRole
 from mmos.schemas.state import StateTransitionRecord
 from mmos.schemas.states import ESCAPE_STATES, ProjectState
@@ -37,7 +37,7 @@ class Orchestrator:
 
     def transition(self, target: ProjectState, *, reason: str) -> ProjectConfig:
         config = load_project_config(self.paths)
-        check_transition(config.state, target, config.resume_state)
+        check_transition(config.state, target, config.resume_state, config.task)
 
         resume_state = config.state if target in ESCAPE_STATES else None
 
@@ -67,15 +67,16 @@ class Orchestrator:
         It never skips a state, never leaves an escape state, and never moves backwards.
         """
         config = load_project_config(self.paths)
-        if config.state in ESCAPE_STATES or config.state not in LINEAR_ORDER:
+        order = task_order(config.task)
+        if config.state in ESCAPE_STATES or config.state not in order:
             raise ValueError(f"cannot advance from state {config.state.value}")
-        if target not in LINEAR_ORDER:
-            raise ValueError(f"cannot advance to non-linear state {target.value}")
-        if LINEAR_ORDER.index(target) <= LINEAR_ORDER.index(config.state):
+        if target not in order:
+            raise ValueError(f"cannot advance to {target.value} for task {config.task.value}")
+        if order.index(target) <= order.index(config.state):
             return config
 
         while config.state is not target:
-            next_state = NEXT_STATE.get(config.state)
+            next_state = task_transition_table(config.task).get(config.state)
             if next_state is None:
                 raise ValueError(f"no path from {config.state.value} to {target.value}")
             config = self.transition(next_state, reason=reason)

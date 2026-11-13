@@ -15,6 +15,7 @@ from mmos.schemas.project import ProjectConfig, ProjectManifest
 from mmos.schemas.proposal import CouncilDecision, CritiqueReport, ModelProposal, ProposalList
 from mmos.schemas.research import ResearchResult
 from mmos.schemas.review import RedTeamReview
+from mmos.schemas.states import TaskFamily
 from mmos.schemas.tournament import TournamentResult
 
 PROJECT_SUBDIRS: tuple[str, ...] = (
@@ -333,7 +334,11 @@ def save_release_summary(paths: ProjectPaths, summary: ReleaseSummary) -> Path:
 
 
 def create_project(
-    projects_dir: Path, name: str, *, now: datetime | None = None
+    projects_dir: Path,
+    name: str,
+    *,
+    now: datetime | None = None,
+    task: TaskFamily = TaskFamily.PREDICTION,
 ) -> tuple[ProjectPaths, ProjectConfig]:
     created_at = now or datetime.now(UTC).replace(microsecond=0)
     projects_dir.mkdir(parents=True, exist_ok=True)
@@ -343,7 +348,7 @@ def create_project(
     for subdir in PROJECT_SUBDIRS:
         (paths.root / subdir).mkdir(parents=True, exist_ok=True)
 
-    config = ProjectConfig(project_id=paths.root.name, name=name, created_at=created_at)
+    config = ProjectConfig(project_id=paths.root.name, name=name, created_at=created_at, task=task)
     save_project_config(paths, config)
     save_manifest(
         paths,

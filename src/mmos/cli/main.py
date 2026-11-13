@@ -71,7 +71,7 @@ from mmos.schemas.experiment import ExperimentResult
 from mmos.schemas.optimization import OptimizationSpec
 from mmos.schemas.project import SourceRole
 from mmos.schemas.proposal import CritiqueReport
-from mmos.schemas.states import ESCAPE_STATES, ProjectState
+from mmos.schemas.states import ESCAPE_STATES, SUPPORTED_TASKS, ProjectState, TaskFamily
 from mmos.utils.logging import configure_logging
 from mmos.validation import validate_experiment
 from mmos.validation.optimization import validate_optimization_experiment
@@ -156,14 +156,22 @@ def doctor() -> None:
 @app.command()
 def init(
     name: Annotated[str, typer.Argument(help="Human-readable project name.")],
+    task: Annotated[
+        TaskFamily,
+        typer.Option("--task", help="Task family: prediction | forecasting | optimization."),
+    ] = TaskFamily.PREDICTION,
     projects_dir: Annotated[
         Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
     ] = None,
 ) -> None:
     """Create a new project with its full directory layout."""
-    paths, config = create_project(_projects_base(projects_dir), name)
+    if task not in SUPPORTED_TASKS:
+        console.print(f"Error: task family {task.value!r} is not implemented.", style="red")
+        raise typer.Exit(code=1)
+    paths, config = create_project(_projects_base(projects_dir), name, task=task)
     console.print(f"Created project [bold]{config.project_id}[/bold]")
     console.print(f"Location: {paths.root}")
+    console.print(f"Task: {config.task.value}")
     console.print(f"State: {config.state.value}")
 
 
@@ -207,13 +215,16 @@ def status(
     table.add_column("Field")
     table.add_column("Value")
     table.add_row("Name", config.name)
+    table.add_row("Task", config.task.value)
     table.add_row("State", config.state.value)
     table.add_row("Resume state", config.resume_state.value if config.resume_state else "-")
     table.add_row("Inputs", str(len(manifest.inputs)))
     for role in SourceRole:
         table.add_row(f"  {role.value}", str(role_counts.get(role.value, 0)))
     next_states = ", ".join(
-        sorted(state.value for state in allowed_targets(config.state, config.resume_state))
+        sorted(
+            state.value for state in allowed_targets(config.state, config.resume_state, config.task)
+        )
     )
     table.add_row("Allowed next", next_states or "none")
     console.print(table)
@@ -1057,6 +1068,20 @@ def optimize(
 ) -> None:
     """Run a MILP experiment through the shared evidence, paper, and review pipeline."""
     paths = resolve_project(project, _projects_base(projects_dir))
+    config = load_project_config(paths)
+    if config.task is not TaskFamily.OPTIMIZATION:
+        console.print(
+            f"Error: project task is {config.task.value}; create it with --task optimization.",
+            style="red",
+        )
+        raise typer.Exit(code=1)
+    if config.state is not ProjectState.PROBLEM_UNDERSTOOD:
+        console.print(
+            f"Error: optimization requires PROBLEM_UNDERSTOOD (currently "
+            f"{config.state.value}); run analyze-problem first.",
+            style="red",
+        )
+        raise typer.Exit(code=1)
     if not spec_file.exists():
         console.print(f"Error: optimization spec not found: {spec_file}", style="red")
         raise typer.Exit(code=1)
@@ -1066,8 +1091,14 @@ def optimize(
         console.print(f"Error: experiment already exists: {spec.experiment_id}", style="red")
         raise typer.Exit(code=1)
 
+    orchestrator = Orchestrator(paths)
     save_optimization_spec(paths, spec)
+    orchestrator.transition(ProjectState.PROTOTYPING, reason="optimization spec planned")
     result = run_optimization(paths, spec.experiment_id)
+    orchestrator.advance_to(
+        ProjectState.EXPERIMENT_COMPLETED, reason="optimization experiment completed"
+    )
+    orchestrator.advance_to(ProjectState.VALIDATING, reason="optimization validation started")
     reports = validate_optimization_experiment(paths, spec.experiment_id)
 
     table = Table(title=f"Optimization {spec.experiment_id}")
@@ -1089,10 +1120,16 @@ def optimize(
         for issue in report.issues:
             console.print(f"  [{issue.severity.value}] {issue.code}: {issue.message}")
     if any(report.blocking for report in reports):
+        orchestrator.transition(
+            ProjectState.REQUIRES_HUMAN_REVIEW,
+            reason="optimization validation failed",
+        )
         console.print("Optimization validation FAILED.", style="red")
         raise typer.Exit(code=1)
+    orchestrator.advance_to(ProjectState.VERIFIED, reason="optimization validators passed")
 
     records = freeze_optimization(paths, spec.experiment_id)
+    orchestrator.advance_to(ProjectState.EVIDENCE_FROZEN, reason="optimization evidence frozen")
     console.print(f"Verified evidence records: {len(records)}")
     solver_solution = next(
         solution for solution in result.solutions if solution.method == "ortools.cbc"
@@ -1116,6 +1153,8 @@ def optimize(
 
     ast = build_optimization_paper(paths, spec.experiment_id)
     report_path = render_paper(paths, ast)
+    orchestrator.advance_to(ProjectState.PAPER_DRAFTED, reason="optimization paper rendered")
+    orchestrator.advance_to(ProjectState.RED_TEAM_REVIEW, reason="optimization red team started")
     review = RedTeam(_model_or_exit()).run(ast, experiment_id=spec.experiment_id)
     review_path = save_red_team_review(paths, review)
 
@@ -1141,6 +1180,10 @@ def optimize(
                 ]
             )
         atomic_write_text(blocked_path, "\n".join(lines))
+        orchestrator.transition(
+            ProjectState.REQUIRES_HUMAN_REVIEW,
+            reason="optimization red team did not pass",
+        )
         console.print(
             f"Release blocked; judge is {review.judge.overall.value}. See {blocked_path}",
             style="red",
@@ -1162,6 +1205,7 @@ def optimize(
         "review": review_path.relative_to(paths.root).as_posix(),
         "created_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
     }
+    orchestrator.advance_to(ProjectState.READY_FOR_RELEASE, reason="optimization red team passed")
     paths.releases_dir.mkdir(parents=True, exist_ok=True)
     release_json = paths.releases_dir / f"optimization_{spec.experiment_id}.json"
     release_md = paths.releases_dir / f"optimization_{spec.experiment_id}.md"
@@ -1178,4 +1222,6 @@ def optimize(
         f"- Red team: `{review.judge.overall.value}`\n"
         f"- Paper: `{report_path.relative_to(paths.root).as_posix()}`\n",
     )
+    orchestrator.advance_to(ProjectState.RELEASED, reason="optimization release written")
+    console.print(f"State: {load_project_config(paths).state.value}")
     console.print(f"Release: {release_md}")

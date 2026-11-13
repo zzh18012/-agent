@@ -19,6 +19,7 @@ from mmos.core.project import (
 from mmos.schemas.common import MMOSModel
 from mmos.schemas.evidence import ClaimRecord, EvidenceIndex, EvidenceRecord
 from mmos.schemas.experiment import ExperimentResult
+from mmos.schemas.optimization import relative_improvement
 from mmos.schemas.validation import ValidationReport, ValidationStatus
 
 REQUIRED_VALIDATORS = ("leakage", "numerical", "statistical", "reproducibility", "temporal")
@@ -591,21 +592,19 @@ def freeze_optimization(paths: ProjectPaths, experiment_id: str) -> list[Evidenc
         and baseline_solution.objective_value is not None
         and baseline_solution.objective_value != 0
     ):
-        if result.sense == "maximize":
-            improvement = (
-                solver_solution.objective_value - baseline_solution.objective_value
-            ) / abs(baseline_solution.objective_value)
-        else:
-            improvement = (
-                baseline_solution.objective_value - solver_solution.objective_value
-            ) / abs(baseline_solution.objective_value)
-        records.append(
-            record(
-                f"ev-{experiment_id}-optimization-relative-improvement",
-                "optimization.relative_improvement",
-                improvement,
-            )
+        improvement = relative_improvement(
+            result.sense,
+            solver_solution.objective_value,
+            baseline_solution.objective_value,
         )
+        if improvement is not None:
+            records.append(
+                record(
+                    f"ev-{experiment_id}-optimization-relative-improvement",
+                    "optimization.relative_improvement",
+                    improvement,
+                )
+            )
 
     if result.enumeration is not None:
         records.append(

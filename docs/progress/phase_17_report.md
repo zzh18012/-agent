@@ -89,3 +89,42 @@ Phase 17.2 should make the lifecycle task-aware: a shared state machine/pipeline
 for optimization, an optimization Tournament (objective/gap + feasibility), MLflow
 tracking, and then a multi-objective or simulation slice. The current MILP slice is a
 proven vertical slice, not a released optimization product.
+
+
+## 17.2A — Task-aware shared lifecycle
+
+Implemented a `TaskFamily` concept (`prediction`, `forecasting`, `optimization`,
+`multi_objective`, `simulation`, `graph`) and stored it in `project.yaml`.
+
+- Prediction/forecasting keep the original lifecycle.
+- Optimization has its own legal state path:
+  `INIT -> PROJECT_INGESTED -> PROBLEM_UNDERSTOOD -> PROTOTYPING -> PROTOTYPED ->
+  EXPERIMENT_COMPLETED -> VALIDATING -> VERIFIED -> EVIDENCE_FROZEN -> PAPER_DRAFTED ->
+  RED_TEAM_REVIEW -> READY_FOR_RELEASE -> RELEASED`.
+- Data-validation and research/council states are not fabricated for optimization.
+- `mmos init --task optimization` creates an optimization project.
+- `mmos optimize` now enters the Orchestrator lifecycle instead of bypassing it:
+  spec planned -> solve -> validate -> freeze -> paper -> Red Team -> PASS gate.
+- Blocked optimization runs transition to `REQUIRES_HUMAN_REVIEW` with resume target
+  `RED_TEAM_REVIEW`. A bug where the blocked run stayed at `RED_TEAM_REVIEW` was found
+  and fixed with a regression test.
+- Objective direction is centralized in `relative_improvement(sense, candidate,
+  baseline)`; maximize/minimize sign semantics are unit tested.
+
+### Live verification
+
+Project `milp-lifecycle-live-20261113-0d233f` (task optimization):
+
+- State history follows the optimization path through `RED_TEAM_REVIEW`.
+- Red Team returned `revise`; release was blocked and the project was moved to
+  `REQUIRES_HUMAN_REVIEW` (resume `RED_TEAM_REVIEW`), with a blocked-review artifact.
+- Fake-PASS and fake-REVISE CLI tests verify both the RELEASED and human-review
+  branches without network calls.
+- Full tests: 161 passed, 3 deselected (see final run log).
+
+### Still outstanding (17.2B–E)
+
+- Optimization experiment identity in MLflow.
+- Optimization Tournament (objective/gap/feasibility/runtime/baseline).
+- Adversarial MILP instances where greedy fails materially.
+- Re-run Paper -> Red Team -> Judge after those additions.

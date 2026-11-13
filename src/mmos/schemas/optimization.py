@@ -69,6 +69,17 @@ class OptimizationModel(MMOSModel):
         return self
 
 
+def relative_improvement(
+    sense: Literal["minimize", "maximize"], candidate: float, baseline: float
+) -> float | None:
+    """Positive means the candidate is better under the objective sense."""
+    if baseline == 0:
+        return None
+    if sense == "maximize":
+        return (candidate - baseline) / abs(baseline)
+    return (baseline - candidate) / abs(baseline)
+
+
 class OptimizationSpec(MMOSModel):
     experiment_id: str
     problem_id: str

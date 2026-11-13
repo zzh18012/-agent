@@ -2,8 +2,11 @@ from itertools import pairwise
 
 import pytest
 
+from mmos.core.project import create_project
 from mmos.core.state_machine import InvalidTransitionError, allowed_targets, check_transition
-from mmos.schemas.states import ESCAPE_STATES, ProjectState
+from mmos.orchestration import Orchestrator
+from mmos.schemas.project import SourceRole
+from mmos.schemas.states import ESCAPE_STATES, ProjectState, TaskFamily
 
 LINEAR_PATH = [
     ProjectState.INIT,
@@ -56,3 +59,33 @@ def test_released_is_terminal() -> None:
     assert allowed_targets(ProjectState.RELEASED) == frozenset()
     with pytest.raises(InvalidTransitionError):
         check_transition(ProjectState.RELEASED, ProjectState.BLOCKED)
+
+
+def test_optimization_lifecycle_skips_prediction_states(tmp_path) -> None:
+    paths, _ = create_project(tmp_path / "projects", "opt", task=TaskFamily.OPTIMIZATION)
+    problem = tmp_path / "problem.md"
+    problem.write_text("# Optimize\n", encoding="utf-8")
+    orchestrator = Orchestrator(paths)
+    orchestrator.ingest([problem], SourceRole.PROBLEM)
+    orchestrator.transition(ProjectState.PROBLEM_UNDERSTOOD, reason="test")
+
+    allowed = allowed_targets(ProjectState.PROBLEM_UNDERSTOOD, task=TaskFamily.OPTIMIZATION)
+    assert ProjectState.PROTOTYPING in allowed
+    assert ProjectState.DATA_VALIDATED not in allowed
+    with pytest.raises(InvalidTransitionError):
+        check_transition(
+            ProjectState.PROBLEM_UNDERSTOOD,
+            ProjectState.DATA_VALIDATED,
+            task=TaskFamily.OPTIMIZATION,
+        )
+
+    updated = orchestrator.advance_to(
+        ProjectState.EXPERIMENT_COMPLETED, reason="test optimization lifecycle"
+    )
+    assert updated.state is ProjectState.EXPERIMENT_COMPLETED
+    history = [
+        entry
+        for entry in paths.state_history_file.read_text(encoding="utf-8").splitlines()
+        if entry
+    ]
+    assert len(history) == 5
