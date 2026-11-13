@@ -3,6 +3,7 @@ from mmos.evidence.store import (
     EvidenceError,
     add_claim,
     freeze_experiment,
+    freeze_optimization,
     load_claims,
     load_evidence_index,
 )
@@ -12,6 +13,7 @@ __all__ = [
     "EvidenceError",
     "add_claim",
     "freeze_experiment",
+    "freeze_optimization",
     "load_claims",
     "load_evidence_index",
 ]

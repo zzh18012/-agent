@@ -121,6 +121,9 @@ uv run mmos redteam <project_id> <experiment_id> [--tournament <tournament_id>]
 # full pipeline: analyze -> research -> council -> experiment -> evidence -> paper -> red team
 uv run mmos run <project_id> --target <column> --feature <column> --feature <column>
 
+# MILP optimization vertical slice (linear model spec + OR-Tools CBC)
+uv run mmos optimize <project_id> benchmarks/milp_knapsack/spec.json
+
 # temporal data: rolling-origin evaluation with naive baselines (horizon required)
 uv run mmos run <project_id> --target y --feature x1 --feature x2 \n  --time-column period --horizon 1 --primary-metric rmse
 ```

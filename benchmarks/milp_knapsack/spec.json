@@ -1,0 +1,104 @@
+{
+  "experiment_id": "exp-milp-knapsack",
+  "problem_id": "milp-knapsack-benchmark",
+  "solver": "ortools.cbc",
+  "time_limit_seconds": 10,
+  "baseline": "greedy_feasible",
+  "model": {
+    "name": "knapsack_10_items",
+    "sense": "maximize",
+    "variables": [
+      {
+        "name": "x_A",
+        "type": "binary",
+        "lower": 0,
+        "upper": 1
+      },
+      {
+        "name": "x_B",
+        "type": "binary",
+        "lower": 0,
+        "upper": 1
+      },
+      {
+        "name": "x_C",
+        "type": "binary",
+        "lower": 0,
+        "upper": 1
+      },
+      {
+        "name": "x_D",
+        "type": "binary",
+        "lower": 0,
+        "upper": 1
+      },
+      {
+        "name": "x_E",
+        "type": "binary",
+        "lower": 0,
+        "upper": 1
+      },
+      {
+        "name": "x_F",
+        "type": "binary",
+        "lower": 0,
+        "upper": 1
+      },
+      {
+        "name": "x_G",
+        "type": "binary",
+        "lower": 0,
+        "upper": 1
+      },
+      {
+        "name": "x_H",
+        "type": "binary",
+        "lower": 0,
+        "upper": 1
+      },
+      {
+        "name": "x_I",
+        "type": "binary",
+        "lower": 0,
+        "upper": 1
+      },
+      {
+        "name": "x_J",
+        "type": "binary",
+        "lower": 0,
+        "upper": 1
+      }
+    ],
+    "objective": {
+      "x_A": 60,
+      "x_B": 100,
+      "x_C": 120,
+      "x_D": 90,
+      "x_E": 80,
+      "x_F": 70,
+      "x_G": 50,
+      "x_H": 40,
+      "x_I": 30,
+      "x_J": 20
+    },
+    "constraints": [
+      {
+        "name": "capacity",
+        "coefficients": {
+          "x_A": 10,
+          "x_B": 20,
+          "x_C": 30,
+          "x_D": 15,
+          "x_E": 12,
+          "x_F": 8,
+          "x_G": 6,
+          "x_H": 5,
+          "x_I": 4,
+          "x_J": 3
+        },
+        "lower": null,
+        "upper": 50
+      }
+    ]
+  }
+}

@@ -9,7 +9,11 @@ from mmos.core.project import (
     atomic_write_text,
     experiment_spec_file,
     load_experiment_spec,
+    load_optimization_result,
+    load_optimization_spec,
     load_tournament_result,
+    optimization_result_file,
+    optimization_spec_file,
     sha256_file,
 )
 from mmos.schemas.common import MMOSModel
@@ -482,3 +486,220 @@ def add_claim(
         ),
     )
     return claim
+
+
+def freeze_optimization(paths: ProjectPaths, experiment_id: str) -> list[EvidenceRecord]:
+    validation_dir = paths.experiment_dir(experiment_id) / "validation"
+    summary_path = validation_dir / "summary.json"
+    report_path = validation_dir / "optimization.json"
+    if not summary_path.exists() or not report_path.exists():
+        raise EvidenceError(f"optimization experiment {experiment_id!r} has not been validated")
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    if summary.get("blocking"):
+        raise EvidenceError("optimization validation contains blocking issues")
+    report = ValidationReport.model_validate_json(report_path.read_text(encoding="utf-8"))
+    if report.blocking or report.status is not ValidationStatus.PASSED:
+        raise EvidenceError("optimization validator did not pass")
+
+    spec = load_optimization_spec(paths, experiment_id)
+    result = load_optimization_result(paths, experiment_id)
+    result_path = optimization_result_file(paths, experiment_id)
+    spec_path = optimization_spec_file(paths, experiment_id)
+    result_hash = sha256_file(result_path)
+    spec_hash = sha256_file(spec_path)
+    now = datetime.now(UTC).replace(microsecond=0)
+    provenance = {
+        "kind": "optimization",
+        "result_path": result_path.relative_to(paths.root).as_posix(),
+        "result_sha256": result_hash,
+        "spec_path": spec_path.relative_to(paths.root).as_posix(),
+        "spec_sha256": spec_hash,
+    }
+
+    def record(evidence_id: str, key: str, value: float | int | str) -> EvidenceRecord:
+        display = f"{value:.10g}" if isinstance(value, float) else str(value)
+        return EvidenceRecord(
+            evidence_id=evidence_id,
+            key=key,
+            raw_value=value,
+            display_value=display,
+            experiment_id=experiment_id,
+            artifact_path=provenance["result_path"],
+            artifact_hash=result_hash,
+            source_field=key,
+            validation_reports=[report.validator],
+            verified_at=now,
+            provenance=provenance,
+        )
+
+    records: list[EvidenceRecord] = []
+    records.append(
+        record(f"ev-{experiment_id}-optimization-model", "optimization.model", spec.model.name)
+    )
+    if result.selected_method:
+        records.append(
+            record(
+                f"ev-{experiment_id}-optimization-selected",
+                "optimization.selected_method",
+                result.selected_method,
+            )
+        )
+    solver_solution = next(
+        (solution for solution in result.solutions if solution.method == "ortools.cbc"),
+        None,
+    )
+    baseline_solution = next(
+        (solution for solution in result.solutions if solution.method == "greedy_feasible"),
+        None,
+    )
+    for solution in result.solutions:
+        prefix = f"optimization.{solution.method}"
+        records.append(
+            record(f"ev-{experiment_id}-{prefix}-status", f"{prefix}.status", solution.status)
+        )
+        records.append(
+            record(
+                f"ev-{experiment_id}-{prefix}-feasible",
+                f"{prefix}.feasible",
+                str(solution.feasible).lower(),
+            )
+        )
+        for field in ("objective_value", "best_bound", "optimality_gap"):
+            value = getattr(solution, field)
+            if value is None:
+                continue
+            records.append(
+                record(
+                    f"ev-{experiment_id}-{prefix}-{field}",
+                    f"{prefix}.{field}",
+                    value,
+                )
+            )
+        if solution.method == result.selected_method:
+            for name, value in solution.variable_values.items():
+                records.append(
+                    record(
+                        f"ev-{experiment_id}-optimization-variable-{name}",
+                        f"optimization.variable.{name}",
+                        value,
+                    )
+                )
+    if (
+        solver_solution is not None
+        and baseline_solution is not None
+        and solver_solution.objective_value is not None
+        and baseline_solution.objective_value is not None
+        and baseline_solution.objective_value != 0
+    ):
+        if result.sense == "maximize":
+            improvement = (
+                solver_solution.objective_value - baseline_solution.objective_value
+            ) / abs(baseline_solution.objective_value)
+        else:
+            improvement = (
+                baseline_solution.objective_value - solver_solution.objective_value
+            ) / abs(baseline_solution.objective_value)
+        records.append(
+            record(
+                f"ev-{experiment_id}-optimization-relative-improvement",
+                "optimization.relative_improvement",
+                improvement,
+            )
+        )
+
+    if result.enumeration is not None:
+        records.append(
+            record(
+                f"ev-{experiment_id}-optimization-enumeration-status",
+                "optimization.enumeration.status",
+                result.enumeration.status,
+            )
+        )
+        if result.enumeration.optimum_value is not None:
+            records.append(
+                record(
+                    f"ev-{experiment_id}-optimization-enumeration-optimum",
+                    "optimization.enumeration.optimum_value",
+                    result.enumeration.optimum_value,
+                )
+            )
+        records.append(
+            record(
+                f"ev-{experiment_id}-optimization-enumeration-evaluated",
+                "optimization.enumeration.evaluated_subsets",
+                result.enumeration.evaluated_subsets,
+            )
+        )
+        if result.enumeration.optimal_subsets is not None:
+            records.append(
+                record(
+                    f"ev-{experiment_id}-optimization-enumeration-optimal-count",
+                    "optimization.enumeration.optimal_subsets",
+                    result.enumeration.optimal_subsets,
+                )
+            )
+    for solution in result.solutions:
+        records.append(
+            record(
+                f"ev-{experiment_id}-optimization-{solution.method}-runtime",
+                f"optimization.{solution.method}.runtime_seconds",
+                solution.runtime_seconds,
+            )
+        )
+        if solution.method == result.selected_method:
+            for constraint in spec.model.constraints:
+                activity = sum(
+                    coefficient * solution.variable_values.get(name, 0.0)
+                    for name, coefficient in constraint.coefficients.items()
+                )
+                records.append(
+                    record(
+                        f"ev-{experiment_id}-optimization-selected-constraint-{constraint.name}",
+                        f"optimization.selected.constraint.{constraint.name}",
+                        activity,
+                    )
+                )
+    records.append(
+        record(
+            f"ev-{experiment_id}-optimization-time-limit",
+            "optimization.time_limit_seconds",
+            spec.time_limit_seconds,
+        )
+    )
+
+    index = load_evidence_index(paths)
+    for evidence in records:
+        index.records[evidence.evidence_id] = evidence
+    atomic_write_text(paths.verified_numbers_file, index.model_dump_json(indent=2) + "\n")
+    optimization_dir = paths.verified_dir / "optimization"
+    optimization_dir.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(
+        optimization_dir / f"{experiment_id}.json",
+        json.dumps(
+            {
+                "experiment_id": experiment_id,
+                "artifact_hash": result_hash,
+                "records": [evidence.model_dump(mode="json") for evidence in records],
+            },
+            indent=2,
+        )
+        + "\n",
+    )
+    provenance_path = paths.verified_dir / "provenance.json"
+    provenance_index = (
+        json.loads(provenance_path.read_text(encoding="utf-8"))
+        if provenance_path.exists()
+        else {"schema_version": 1, "experiments": {}}
+    )
+    provenance_index["experiments"][f"optimization:{experiment_id}"] = {
+        **provenance,
+        "validation_reports": {"optimization": sha256_file(report_path)},
+        "frozen_at": now.isoformat(),
+    }
+    atomic_write_text(provenance_path, json.dumps(provenance_index, indent=2) + "\n")
+    if not paths.verified_claims_file.exists():
+        atomic_write_text(
+            paths.verified_claims_file,
+            yaml.safe_dump({"claims": []}, sort_keys=False, allow_unicode=True),
+        )
+    return records

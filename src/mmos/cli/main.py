@@ -1,7 +1,9 @@
+import json
 import shutil
 import subprocess
 import sys
 from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -27,6 +29,7 @@ from mmos.config import get_settings
 from mmos.core.dataset import dataset_fingerprint
 from mmos.core.problem_text import collect_problem_text
 from mmos.core.project import (
+    atomic_write_text,
     create_project,
     experiment_spec_file,
     load_manifest,
@@ -34,10 +37,12 @@ from mmos.core.project import (
     load_project_config,
     load_proposals,
     load_research_result,
+    optimization_spec_file,
     resolve_project,
     save_council_decision,
     save_critiques,
     save_experiment_spec,
+    save_optimization_spec,
     save_problem_spec,
     save_proposals,
     save_red_team_review,
@@ -46,21 +51,30 @@ from mmos.core.project import (
 )
 from mmos.core.state_machine import allowed_targets
 from mmos.data import DataAgent
-from mmos.evidence import EvidenceError, add_claim, freeze_experiment
+from mmos.evidence import (
+    EvidenceError,
+    add_claim,
+    freeze_experiment,
+    freeze_optimization,
+)
+from mmos.experiments.optimization_runner import run_optimization
 from mmos.experiments.planner import ExperimentPlanner
 from mmos.experiments.tournament import Tournament
 from mmos.experiments.workflow import run_experiment_workflow
 from mmos.orchestration import Orchestrator
 from mmos.paper import PaperError, build_paper, render_paper
+from mmos.paper.optimization_builder import build_optimization_paper
 from mmos.pipeline import PipelineBlocked, PipelineOptions, run_pipeline
 from mmos.registries import ModelRegistry
 from mmos.schemas.data import DataSchema
 from mmos.schemas.experiment import ExperimentResult
+from mmos.schemas.optimization import OptimizationSpec
 from mmos.schemas.project import SourceRole
 from mmos.schemas.proposal import CritiqueReport
 from mmos.schemas.states import ESCAPE_STATES, ProjectState
 from mmos.utils.logging import configure_logging
 from mmos.validation import validate_experiment
+from mmos.validation.optimization import validate_optimization_experiment
 
 console = Console()
 
@@ -1031,3 +1045,137 @@ def run(
     )
     console.print(f"Paper: {paths.root / summary.paper_path}")
     console.print(f"Release: {paths.releases_dir / (summary.release_id + '.md')}")
+
+
+@app.command()
+def optimize(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    spec_file: Annotated[Path, typer.Argument(help="OptimizationSpec JSON file.")],
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Run a MILP experiment through the shared evidence, paper, and review pipeline."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    if not spec_file.exists():
+        console.print(f"Error: optimization spec not found: {spec_file}", style="red")
+        raise typer.Exit(code=1)
+    spec = OptimizationSpec.model_validate_json(spec_file.read_text(encoding="utf-8"))
+    target_spec = optimization_spec_file(paths, spec.experiment_id)
+    if target_spec.exists():
+        console.print(f"Error: experiment already exists: {spec.experiment_id}", style="red")
+        raise typer.Exit(code=1)
+
+    save_optimization_spec(paths, spec)
+    result = run_optimization(paths, spec.experiment_id)
+    reports = validate_optimization_experiment(paths, spec.experiment_id)
+
+    table = Table(title=f"Optimization {spec.experiment_id}")
+    table.add_column("Method")
+    table.add_column("Status")
+    table.add_column("Objective", justify="right")
+    table.add_column("Gap", justify="right")
+    table.add_column("Feasible")
+    for solution in result.solutions:
+        table.add_row(
+            solution.method,
+            solution.status,
+            f"{solution.objective_value:.6g}" if solution.objective_value is not None else "-",
+            f"{solution.optimality_gap:.6g}" if solution.optimality_gap is not None else "-",
+            "yes" if solution.feasible else "no",
+        )
+    console.print(table)
+    for report in reports:
+        for issue in report.issues:
+            console.print(f"  [{issue.severity.value}] {issue.code}: {issue.message}")
+    if any(report.blocking for report in reports):
+        console.print("Optimization validation FAILED.", style="red")
+        raise typer.Exit(code=1)
+
+    records = freeze_optimization(paths, spec.experiment_id)
+    console.print(f"Verified evidence records: {len(records)}")
+    solver_solution = next(
+        solution for solution in result.solutions if solution.method == "ortools.cbc"
+    )
+    objective = solver_solution.objective_value
+    evidence_id = f"ev-{spec.experiment_id}-optimization.ortools.cbc-objective_value"
+    try:
+        add_claim(
+            paths,
+            statement=(
+                f"OR-Tools CBC achieved objective {objective} with status "
+                f"{solver_solution.status} on the verified optimization run."
+            ),
+            evidence_ids=[evidence_id],
+            claim_id=f"claim-auto-{spec.experiment_id}",
+            accept=False,
+            notes="Auto-generated by mmos optimize; human acceptance is required.",
+        )
+    except EvidenceError as exc:
+        console.print(f"Warning: claim not registered: {exc}", style="yellow")
+
+    ast = build_optimization_paper(paths, spec.experiment_id)
+    report_path = render_paper(paths, ast)
+    review = RedTeam(_model_or_exit()).run(ast, experiment_id=spec.experiment_id)
+    review_path = save_red_team_review(paths, review)
+
+    console.print(f"Paper: {report_path}")
+    console.print(f"Red team: {review.judge.overall.value} (blocking: {review.judge.blocking})")
+    if not release_allowed(review):
+        blocked_path = paths.reviews_dir / f"blocked_optimization_{spec.experiment_id}.md"
+        lines = [f"# Optimization release blocked: {spec.experiment_id}", ""]
+        for attack in review.attacks.attacks:
+            verdict = next(
+                verdict
+                for verdict in review.judge.verdicts
+                if verdict.attack_id == attack.attack_id
+            )
+            lines.extend(
+                [
+                    f"## {attack.attack_id}: {attack.severity.value} / "
+                    f"{attack.category.value} -> {verdict.verdict.value}",
+                    attack.argument,
+                    f"Required fix: {attack.required_fix}",
+                    f"Judge: {verdict.rationale}",
+                    "",
+                ]
+            )
+        atomic_write_text(blocked_path, "\n".join(lines))
+        console.print(
+            f"Release blocked; judge is {review.judge.overall.value}. See {blocked_path}",
+            style="red",
+        )
+        raise typer.Exit(code=1)
+
+    release = {
+        "experiment_id": spec.experiment_id,
+        "model": spec.model.name,
+        "sense": spec.model.sense,
+        "selected_method": result.selected_method,
+        "solver_status": solver_solution.status,
+        "objective": objective,
+        "optimality_gap": solver_solution.optimality_gap,
+        "feasible": solver_solution.feasible,
+        "validation": {report.validator: report.status.value for report in reports},
+        "red_team": review.judge.overall.value,
+        "paper": report_path.relative_to(paths.root).as_posix(),
+        "review": review_path.relative_to(paths.root).as_posix(),
+        "created_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
+    }
+    paths.releases_dir.mkdir(parents=True, exist_ok=True)
+    release_json = paths.releases_dir / f"optimization_{spec.experiment_id}.json"
+    release_md = paths.releases_dir / f"optimization_{spec.experiment_id}.md"
+    atomic_write_text(release_json, json.dumps(release, indent=2) + "\n")
+    atomic_write_text(
+        release_md,
+        f"# Optimization release {spec.experiment_id}\n\n"
+        f"- Model: `{spec.model.name}` ({spec.model.sense})\n"
+        f"- Selected method: `{result.selected_method}`\n"
+        f"- Solver status: `{solver_solution.status}`\n"
+        f"- Objective: `{objective}`\n"
+        f"- Optimality gap: `{solver_solution.optimality_gap}`\n"
+        f"- Feasible: `{solver_solution.feasible}`\n"
+        f"- Red team: `{review.judge.overall.value}`\n"
+        f"- Paper: `{report_path.relative_to(paths.root).as_posix()}`\n",
+    )
+    console.print(f"Release: {release_md}")

@@ -20,6 +20,7 @@ dependencies = [
     "snakemake>=9.27.1",
     "mlflow>=3.18.0",
     "matplotlib>=3.11.2",
+    "ortools>=9.15.6755",
 ]
 
 [dependency-groups]
