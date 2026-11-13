@@ -1,0 +1,37 @@
+{
+  "instance_id": "random_uniform_1",
+  "problem_family": "binary_knapsack",
+  "weights": [
+    3,
+    10,
+    11,
+    3,
+    2,
+    8,
+    6,
+    3,
+    10,
+    18
+  ],
+  "values": [
+    2,
+    18,
+    1,
+    4,
+    4,
+    20,
+    20,
+    19,
+    2,
+    17
+  ],
+  "capacity": 37,
+  "generator": "seeded_uniform",
+  "generator_version": "knapsack-generator-v1",
+  "seed": 20261214,
+  "tags": [
+    "random",
+    "uniform"
+  ],
+  "instance_hash": "fca709de003d360be3ee53fe8b0a2c430d6c422787ee15ebf6239c1a585b7afc"
+}

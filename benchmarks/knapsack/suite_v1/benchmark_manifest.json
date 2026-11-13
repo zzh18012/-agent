@@ -1,0 +1,320 @@
+{
+  "suite_id": "knapsack-suite-v1",
+  "suite_version": "1.0.0",
+  "task_family": "optimization",
+  "problem_family": "binary_knapsack",
+  "created_at": "2026-11-13T03:11:40Z",
+  "generator_version": "knapsack-generator-v1",
+  "suite_seed": 20261113,
+  "instances": [
+    {
+      "instance_id": "sanity_legacy_10",
+      "problem_family": "binary_knapsack",
+      "weights": [
+        10,
+        20,
+        30,
+        15,
+        12,
+        8,
+        6,
+        5,
+        4,
+        3
+      ],
+      "values": [
+        60,
+        100,
+        120,
+        90,
+        80,
+        70,
+        50,
+        40,
+        30,
+        20
+      ],
+      "capacity": 50,
+      "generator": "legacy_manual",
+      "generator_version": "knapsack-generator-v1",
+      "seed": null,
+      "tags": [
+        "sanity",
+        "legacy"
+      ],
+      "instance_hash": "013ffe80fce4dd901931127abd1e58df0a907119c082d032a83c475283dc52f6"
+    },
+    {
+      "instance_id": "greedy_ratio_trap",
+      "problem_family": "binary_knapsack",
+      "weights": [
+        6,
+        5,
+        5
+      ],
+      "values": [
+        12,
+        9,
+        9
+      ],
+      "capacity": 10,
+      "generator": "curated_trap",
+      "generator_version": "knapsack-generator-v1",
+      "seed": null,
+      "tags": [
+        "adversarial",
+        "greedy_ratio_trap"
+      ],
+      "instance_hash": "8b3d5988a3ea5d65a271f06e7f9f7d29a3963a7c7016db9b46a94deff13e1370"
+    },
+    {
+      "instance_id": "capacity_fragmentation",
+      "problem_family": "binary_knapsack",
+      "weights": [
+        5,
+        11,
+        10,
+        4,
+        7,
+        11,
+        9,
+        12
+      ],
+      "values": [
+        9,
+        5,
+        35,
+        21,
+        40,
+        19,
+        17,
+        35
+      ],
+      "capacity": 32,
+      "generator": "curated_adversarial",
+      "generator_version": "knapsack-generator-v1",
+      "seed": null,
+      "tags": [
+        "adversarial",
+        "capacity_fragmentation"
+      ],
+      "instance_hash": "fc5064e58bd408526ab0cc7317adeb50ee868935f0cd13e284dcd0f1cf6875ce"
+    },
+    {
+      "instance_id": "tie_stress",
+      "problem_family": "binary_knapsack",
+      "weights": [
+        2,
+        4,
+        6
+      ],
+      "values": [
+        4,
+        8,
+        12
+      ],
+      "capacity": 12,
+      "generator": "curated_tie",
+      "generator_version": "knapsack-generator-v1",
+      "seed": null,
+      "tags": [
+        "adversarial",
+        "tie_stress"
+      ],
+      "instance_hash": "a2a9395ad488e9fea6cce9bc68bbd9fab9923f62bf367812ebb4cc6ceef917c7"
+    },
+    {
+      "instance_id": "random_uniform_1",
+      "problem_family": "binary_knapsack",
+      "weights": [
+        3,
+        10,
+        11,
+        3,
+        2,
+        8,
+        6,
+        3,
+        10,
+        18
+      ],
+      "values": [
+        2,
+        18,
+        1,
+        4,
+        4,
+        20,
+        20,
+        19,
+        2,
+        17
+      ],
+      "capacity": 37,
+      "generator": "seeded_uniform",
+      "generator_version": "knapsack-generator-v1",
+      "seed": 20261214,
+      "tags": [
+        "random",
+        "uniform"
+      ],
+      "instance_hash": "fca709de003d360be3ee53fe8b0a2c430d6c422787ee15ebf6239c1a585b7afc"
+    },
+    {
+      "instance_id": "random_uniform_2",
+      "problem_family": "binary_knapsack",
+      "weights": [
+        8,
+        5,
+        20,
+        20,
+        15,
+        6,
+        19,
+        19,
+        7,
+        5
+      ],
+      "values": [
+        13,
+        17,
+        14,
+        1,
+        11,
+        9,
+        7,
+        20,
+        10,
+        14
+      ],
+      "capacity": 62,
+      "generator": "seeded_uniform",
+      "generator_version": "knapsack-generator-v1",
+      "seed": 20261315,
+      "tags": [
+        "random",
+        "uniform"
+      ],
+      "instance_hash": "eaf2575ae59c717fd8380cf06fc6a19a91899dc8046f287acf3d2f794980d4e1"
+    },
+    {
+      "instance_id": "random_correlated_1",
+      "problem_family": "binary_knapsack",
+      "weights": [
+        13,
+        11,
+        13,
+        11,
+        10,
+        8,
+        19,
+        17,
+        12,
+        7
+      ],
+      "values": [
+        42,
+        31,
+        41,
+        30,
+        30,
+        25,
+        57,
+        48,
+        36,
+        19
+      ],
+      "capacity": 60,
+      "generator": "seeded_correlated",
+      "generator_version": "knapsack-generator-v1",
+      "seed": 20261416,
+      "tags": [
+        "random",
+        "correlated"
+      ],
+      "instance_hash": "c67ef4139ba0c2e78bcb880cf59316ec6d9e333278e854770130f41544b81aa7"
+    },
+    {
+      "instance_id": "random_correlated_2",
+      "problem_family": "binary_knapsack",
+      "weights": [
+        18,
+        9,
+        15,
+        14,
+        18,
+        14,
+        14,
+        11,
+        15,
+        19
+      ],
+      "values": [
+        55,
+        27,
+        43,
+        44,
+        55,
+        44,
+        45,
+        31,
+        48,
+        58
+      ],
+      "capacity": 73,
+      "generator": "seeded_correlated",
+      "generator_version": "knapsack-generator-v1",
+      "seed": 20261517,
+      "tags": [
+        "random",
+        "correlated"
+      ],
+      "instance_hash": "19ed1a15b838f8f90f7e6b62e3495f49a8500c2189efd12bdf10d542663b2469"
+    },
+    {
+      "instance_id": "random_weak_1",
+      "problem_family": "binary_knapsack",
+      "weights": [
+        14,
+        2,
+        12,
+        8,
+        16,
+        12,
+        8,
+        13,
+        10,
+        2
+      ],
+      "values": [
+        12,
+        2,
+        10,
+        13,
+        19,
+        12,
+        12,
+        11,
+        10,
+        1
+      ],
+      "capacity": 48,
+      "generator": "seeded_weakly_correlated",
+      "generator_version": "knapsack-generator-v1",
+      "seed": 20261618,
+      "tags": [
+        "random",
+        "weakly_correlated"
+      ],
+      "instance_hash": "87d4a45134359a7feb171130caba34096855fe9f09b436022d31ee3a5cfa5411"
+    }
+  ],
+  "methods": [
+    "ortools.cbc",
+    "greedy_feasible",
+    "enhanced_greedy_feasible"
+  ],
+  "oracle_method": "exhaustive_enumeration",
+  "manifest_hash": "ecedb6c403c4d2951130c68044151c3ff7cff61e6ee5f60365bca64123515779",
+  "frozen": true
+}

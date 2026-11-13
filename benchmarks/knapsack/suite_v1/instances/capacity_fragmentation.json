@@ -1,0 +1,33 @@
+{
+  "instance_id": "capacity_fragmentation",
+  "problem_family": "binary_knapsack",
+  "weights": [
+    5,
+    11,
+    10,
+    4,
+    7,
+    11,
+    9,
+    12
+  ],
+  "values": [
+    9,
+    5,
+    35,
+    21,
+    40,
+    19,
+    17,
+    35
+  ],
+  "capacity": 32,
+  "generator": "curated_adversarial",
+  "generator_version": "knapsack-generator-v1",
+  "seed": null,
+  "tags": [
+    "adversarial",
+    "capacity_fragmentation"
+  ],
+  "instance_hash": "fc5064e58bd408526ab0cc7317adeb50ee868935f0cd13e284dcd0f1cf6875ce"
+}

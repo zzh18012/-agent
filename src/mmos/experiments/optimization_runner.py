@@ -162,6 +162,8 @@ def solve_greedy(model: OptimizationModel) -> OptimizationSolution:
                     total += max(constraint.coefficients.get(variable_name, 0.0), 0.0)
             return max(total, 1e-9)
 
+        index = {variable.name: position for position, variable in enumerate(model.variables)}
+
         def score(variable_name: str) -> float:
             coefficient = model.objective.get(variable_name, 0.0)
             if model.sense == "minimize":
@@ -170,7 +172,12 @@ def solve_greedy(model: OptimizationModel) -> OptimizationSolution:
 
         ordered = sorted(
             (variable for variable in model.variables if variable.type is VariableType.BINARY),
-            key=lambda variable: score(variable.name),
+            key=lambda variable: (
+                score(variable.name),
+                model.objective.get(variable.name, 0.0),
+                -variable.upper,
+                -index[variable.name],
+            ),
             reverse=True,
         )
         for variable in ordered:
@@ -345,30 +352,109 @@ def comparison_diagnostics(spec_a, spec_b) -> tuple[bool, list[str]]:
     return True, reasons
 
 
+def solve_enhanced_greedy(model: OptimizationModel) -> OptimizationSolution:
+    """Best feasible solution among ratio greedy and a single-item solution."""
+    greedy = solve_greedy(model)
+    best_single_values = {variable.name: variable.lower for variable in model.variables}
+    best_single_objective: float | None = None
+    best_single_feasible = False
+    for variable in model.variables:
+        if variable.type is not VariableType.BINARY:
+            continue
+        values = dict(best_single_values)
+        values[variable.name] = 1.0
+        feasible, _, objective = check_solution(model, values)
+        if not feasible:
+            continue
+        if best_single_objective is None or (
+            objective > best_single_objective
+            if model.sense == "maximize"
+            else objective < best_single_objective
+        ):
+            best_single_objective = objective
+            best_single_values = values
+            best_single_feasible = True
+    if greedy.feasible and greedy.objective_value is not None:
+        greedy_is_better = True
+        if best_single_feasible and best_single_objective is not None:
+            greedy_is_better = (
+                greedy.objective_value >= best_single_objective
+                if model.sense == "maximize"
+                else greedy.objective_value <= best_single_objective
+            )
+        if greedy_is_better:
+            return greedy.model_copy(
+                update={
+                    "method": "enhanced_greedy_feasible",
+                    "solver": "enhanced_greedy",
+                    "solver_version": "n/a",
+                }
+            )
+    if not best_single_feasible:
+        return OptimizationSolution(
+            method="enhanced_greedy_feasible",
+            status="infeasible",
+            feasible=False,
+            solver="enhanced_greedy",
+            solver_version="n/a",
+            termination_condition="heuristic",
+        )
+    return OptimizationSolution(
+        method="enhanced_greedy_feasible",
+        status="feasible",
+        objective_value=best_single_objective,
+        variable_values=best_single_values,
+        feasible=True,
+        solver="enhanced_greedy",
+        solver_version="n/a",
+        termination_condition="heuristic",
+    )
+
+
 def run_optimization(paths: ProjectPaths, experiment_id: str) -> OptimizationResult:
     spec = load_optimization_spec(paths, experiment_id)
     if spec.instance_hash is None:
         spec = spec.model_copy(update={"instance_hash": optimization_instance_hash(spec.model)})
         save_optimization_spec(paths, spec)
-    solver_solution = solve_ortools(spec.model, spec.time_limit_seconds)
-    solutions = [solver_solution]
-    if spec.baseline == "greedy_feasible":
-        solutions.append(solve_greedy(spec.model))
-    selected = solver_solution.method if solver_solution.feasible else None
-    enumeration = enumerate_binary_model(spec.model)
-    if (
-        enumeration.status == "complete"
-        and enumeration.optimum_value is not None
-        and solver_solution.objective_value is not None
-    ):
-        enumeration = enumeration.model_copy(
-            update={
-                "matches_solver_result": abs(
-                    enumeration.optimum_value - solver_solution.objective_value
-                )
-                <= _TOLERANCE
-            }
-        )
+    if spec.solver == "ortools.cbc":
+        solver_solution = solve_ortools(spec.model, spec.time_limit_seconds)
+        solutions = [solver_solution]
+        if spec.baseline == "greedy_feasible":
+            solutions.append(solve_greedy(spec.model))
+        selected = solver_solution.method if solver_solution.feasible else None
+        enumeration = enumerate_binary_model(spec.model)
+        if (
+            enumeration.status == "complete"
+            and enumeration.optimum_value is not None
+            and solver_solution.objective_value is not None
+        ):
+            enumeration = enumeration.model_copy(
+                update={
+                    "matches_solver_result": abs(
+                        enumeration.optimum_value - solver_solution.objective_value
+                    )
+                    <= _TOLERANCE
+                }
+            )
+        solver_backend = "CBC"
+        solver_version = solver_solution.solver_version
+    elif spec.solver == "greedy":
+        solver_solution = solve_greedy(spec.model)
+        solutions = [solver_solution]
+        selected = solver_solution.method if solver_solution.feasible else None
+        enumeration = None
+        solver_backend = "greedy"
+        solver_version = "n/a"
+    elif spec.solver == "enhanced_greedy":
+        solver_solution = solve_enhanced_greedy(spec.model)
+        solutions = [solver_solution]
+        selected = solver_solution.method if solver_solution.feasible else None
+        enumeration = None
+        solver_backend = "enhanced_greedy"
+        solver_version = "n/a"
+    else:
+        raise NotImplementedError(f"unsupported solver {spec.solver!r}")
+
     result = OptimizationResult(
         experiment_id=experiment_id,
         problem_id=spec.problem_id,
@@ -378,8 +464,8 @@ def run_optimization(paths: ProjectPaths, experiment_id: str) -> OptimizationRes
         selected_method=selected,
         enumeration=enumeration,
         instance_hash=spec.instance_hash,
-        solver_backend="CBC",
-        solver_version=solver_solution.solver_version,
+        solver_backend=solver_backend,
+        solver_version=solver_version,
         generated_at=datetime.now(UTC).replace(microsecond=0),
     )
     save_optimization_result(paths, result)

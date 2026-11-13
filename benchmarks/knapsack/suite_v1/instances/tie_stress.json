@@ -1,0 +1,23 @@
+{
+  "instance_id": "tie_stress",
+  "problem_family": "binary_knapsack",
+  "weights": [
+    2,
+    4,
+    6
+  ],
+  "values": [
+    4,
+    8,
+    12
+  ],
+  "capacity": 12,
+  "generator": "curated_tie",
+  "generator_version": "knapsack-generator-v1",
+  "seed": null,
+  "tags": [
+    "adversarial",
+    "tie_stress"
+  ],
+  "instance_hash": "a2a9395ad488e9fea6cce9bc68bbd9fab9923f62bf367812ebb4cc6ceef917c7"
+}

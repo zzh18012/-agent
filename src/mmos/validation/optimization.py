@@ -106,7 +106,9 @@ def validate_optimization(paths: ProjectPaths, experiment_id: str) -> Validation
     ]
     if not solver_solutions:
         error("missing_solver", "no OR-Tools solution was recorded")
-    if not any(solution.method == "greedy_feasible" for solution in result.solutions):
+    if spec.baseline == "greedy_feasible" and not any(
+        solution.method == "greedy_feasible" for solution in result.solutions
+    ):
         error("missing_baseline", "no greedy baseline was recorded")
 
     return build_report(

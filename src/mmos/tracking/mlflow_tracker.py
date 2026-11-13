@@ -6,6 +6,7 @@ import mlflow
 from mlflow.tracking import MlflowClient
 
 from mmos.core.project import ProjectPaths, atomic_write_text
+from mmos.schemas.benchmark import BenchmarkSuiteResult
 from mmos.schemas.experiment import ExperimentResult, ExperimentSpec
 from mmos.schemas.optimization import (
     OptimizationExperimentRecord,
@@ -229,3 +230,63 @@ def log_optimization_tournament(
         mlflow_record.model_dump_json(indent=2) + "\n",
     )
     return mlflow_record
+
+
+def log_benchmark_suite(
+    paths: ProjectPaths, result: BenchmarkSuiteResult, artifact_dir: Path
+) -> MLflowRunRecord:
+    uri = tracking_uri(paths)
+    mlflow.set_tracking_uri(uri)
+    client = MlflowClient(tracking_uri=uri)
+    experiment_id = _experiment_id(client, paths)
+    with mlflow.start_run(
+        experiment_id=experiment_id, run_name=f"benchmark:{result.benchmark_run_id}"
+    ) as run:
+        mlflow.set_tags(
+            {
+                "project_id": paths.root.name,
+                "task_family": "optimization_benchmark",
+                "suite_id": result.suite_id,
+                "manifest_hash": result.manifest_hash,
+                "status": result.status,
+                "oracle_agreement": str(result.oracle_agreement).lower(),
+                "git_commit": result.git_commit,
+            }
+        )
+        mlflow.log_param("n_instances", result.n_instances)
+        mlflow.log_metrics(
+            {
+                "candidate.feasible_count": result.candidate_feasible_count,
+                "candidate.verified_optimum_count": result.candidate_verified_optimum_count,
+                "candidate.win_count": result.candidate_win_count,
+                "candidate.tie_count": result.candidate_tie_count,
+                "candidate.loss_count": result.candidate_loss_count,
+                "greedy.hit_rate": result.greedy.hit_rate,
+                "enhanced_greedy.hit_rate": result.enhanced_greedy.hit_rate,
+            }
+        )
+        for label, aggregate in (
+            ("greedy", result.greedy),
+            ("enhanced_greedy", result.enhanced_greedy),
+        ):
+            for field in (
+                "mean_relative_regret",
+                "median_relative_regret",
+                "max_relative_regret",
+                "mean_absolute_regret",
+                "max_absolute_regret",
+            ):
+                value = getattr(aggregate, field)
+                if value is not None:
+                    mlflow.log_metric(f"{label}.{field}", value)
+        mlflow.log_artifacts(str(artifact_dir), artifact_path="benchmark")
+        run_id = run.info.run_id
+
+    record = MLflowRunRecord(
+        run_id=run_id,
+        tracking_uri=uri,
+        experiment_name=paths.root.name,
+        logged_at=datetime.now(UTC).replace(microsecond=0),
+    )
+    atomic_write_text(artifact_dir / "mlflow_run.json", record.model_dump_json(indent=2) + chr(10))
+    return record

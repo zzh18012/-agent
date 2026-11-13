@@ -134,7 +134,7 @@ class OptimizationSpec(MMOSModel):
     solver: str = "ortools.cbc"
     solver_parameters: dict[str, str] = Field(default_factory=dict)
     time_limit_seconds: float = Field(default=30.0, gt=0)
-    baseline: Literal["greedy_feasible"] = "greedy_feasible"
+    baseline: Literal["greedy_feasible", "none"] = "greedy_feasible"
     instance_hash: str | None = None
     random_seed: int | None = None
     acceptance_criteria: list[str] = Field(default_factory=list)

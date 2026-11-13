@@ -1,0 +1,37 @@
+{
+  "instance_id": "random_correlated_2",
+  "problem_family": "binary_knapsack",
+  "weights": [
+    18,
+    9,
+    15,
+    14,
+    18,
+    14,
+    14,
+    11,
+    15,
+    19
+  ],
+  "values": [
+    55,
+    27,
+    43,
+    44,
+    55,
+    44,
+    45,
+    31,
+    48,
+    58
+  ],
+  "capacity": 73,
+  "generator": "seeded_correlated",
+  "generator_version": "knapsack-generator-v1",
+  "seed": 20261517,
+  "tags": [
+    "random",
+    "correlated"
+  ],
+  "instance_hash": "19ed1a15b838f8f90f7e6b62e3495f49a8500c2189efd12bdf10d542663b2469"
+}

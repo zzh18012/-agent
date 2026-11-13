@@ -236,3 +236,65 @@ Project `milp-tournament-live-20261113-aa5fb7`:
 
 Adversarial MILP instances, multi-objective/Pareto/hypervolume, VRP/simulation/graph,
 and a post-tournament Paper -> Red Team -> Judge revision cycle.
+
+
+## 17.2D — Adversarial knapsack benchmark suite v1
+
+Adds a first-class, freeze-before-run benchmark suite.
+
+- New schemas: `KnapsackInstance`, `BenchmarkManifest`, `OracleResult`,
+  `MethodAggregate`, `InstanceSuiteResult`, `BenchmarkSuiteResult`.
+- Frozen suite: `benchmarks/knapsack/suite_v1/benchmark_manifest.json` plus
+  per-instance JSON files. Manifest hash is computed over suite metadata, methods,
+  oracle, and all instance hashes; editing a frozen instance invalidates the hash.
+- Nine instances: one legacy sanity instance, one ratio-greedy trap, one capacity
+  fragmentation adversarial case, one tie-stress case, two seeded uniform, two
+  correlated, and one weakly correlated random instance. All seeds derive from the
+  suite seed; curated instances do not change with seed.
+- Independent oracle: in-process exhaustive enumeration, limited to 20 items, with
+  search space, feasible subset count, optimum, and optimal subset. It does not call
+  CBC or read solver values.
+- Methods: CBC candidate, deterministic ratio-greedy sanity baseline, and a
+  best-of(ratio greedy, best single feasible item) enhanced heuristic baseline.
+  Greedy tie-breaking is deterministic (ratio, value, weight, index).
+- Per instance: three formal experiments (CBC, greedy, enhanced greedy), each with
+  spec/result/run record/solver log/MLflow run; candidate validation; and a formal
+  Phase 17.2C tournament (CBC vs greedy). Enhanced greedy is aggregated but not part
+  of the binary tournament.
+- Suite aggregate: candidate feasible/verified counts, win/tie/loss, oracle
+  agreement; greedy/enhanced hit rate, failures, mean/median/max absolute and
+  relative regret, worst instance, plus per-instance table; no weighted score.
+- Suite evidence, suite MLflow run, suite PaperAST with all instances, proposed
+  claims, and Red Team review.
+
+### Live suite run
+
+Project `knapsack-benchmark-live-20261113-c3dbc6`:
+
+- Suite `knapsack-suite-v1` v1.0.0, generator `knapsack-generator-v1`, suite seed
+  20261113, 9 instances, status `complete`.
+- Manifest hash: `ecedb6c403c4d2951130c68044151c3ff7cff61e6ee5f60365bca64123515779`.
+- CBC: 9/9 feasible, 9/9 verified against the independent oracle; oracle agreement
+  true; candidate wins/ties/losses = 5/4/0.
+- CBC runtime: min 0.00092 s, median 0.00391 s, max 0.04076 s (tiny instances).
+- Greedy: hits 4/9, failures 5; mean relative regret 0.05352, median 0.01739,
+  max 0.33333, worst `greedy_ratio_trap`.
+- Enhanced greedy: hits 4/9, failures 5; mean relative regret 0.05106, median
+  0.01739, max 0.33333, worst `greedy_ratio_trap`.
+- Adversarial: `greedy_ratio_trap` oracle 18 vs greedy 12 (33.3% regret);
+  `capacity_fragmentation` oracle 115 vs greedy 113 (1.74%).
+- Evidence: 81 verified records plus two proposed claims (CBC oracle agreement;
+  greedy failure rate/worst case). No claim was auto-accepted.
+- Red Team: revise (3 major, 3 minor); PASS-only gate blocked release and wrote a
+  blocked-review artifact. Project lifecycle state remains `INIT` because the suite
+  runner is artifact-level; this is documented as a remaining integration gap.
+- Tests: 181 passed, 3 deselected; ruff and pyright clean.
+
+### Known limitations / not done
+
+- One problem family (0/1 knapsack), small instances, synthetic data only.
+- Enhanced greedy is not in the per-instance tournament; it is aggregated.
+- Suite-level run is not yet integrated with the project lifecycle state machine.
+- No scale sensitivity, multi-objective, Pareto, VRP, simulation, or graph tasks.
+- Phase 17.2E (post-tournament Paper -> Red Team -> Judge revision cycle) was not
+  started.
