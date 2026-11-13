@@ -140,6 +140,9 @@ class BenchmarkSuiteResult(MMOSModel):
     missing_instances: list[str] = Field(default_factory=list)
     started_at: datetime
     completed_at: datetime
+    methods_code_hash: str = "unknown"
+    generator_code_hash: str = "unknown"
+    runtime: dict[str, str] = Field(default_factory=dict)
     git_commit: str = "unknown"
     suite_mlflow_run_id: str | None = None
     experiment_ids: dict[str, list[str]] = Field(default_factory=dict)

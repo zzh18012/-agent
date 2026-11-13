@@ -1,8 +1,12 @@
+import hashlib
 import itertools
 import json
+import platform
 import random
+import sys
 import time
 from datetime import UTC, datetime
+from importlib import metadata
 from pathlib import Path
 
 from mmos.core.project import atomic_write_text
@@ -125,6 +129,33 @@ def build_instances(suite_seed: int = DEFAULT_SUITE_SEED) -> list[KnapsackInstan
     for instance_id, seed, family in random_specs:
         add_random(instance_id, seed, family)
     return instances
+
+
+def generator_code_hash() -> str:
+    """Hash the frozen instance generator, oracle, and manifest implementation."""
+    return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+
+
+def methods_code_hash() -> str:
+    """Hash the frozen generator/oracle and the greedy baseline implementation."""
+    hasher = hashlib.sha256()
+    for name in ("knapsack_benchmark.py", "optimization_runner.py"):
+        hasher.update((Path(__file__).parent / name).read_bytes())
+    return hasher.hexdigest()
+
+
+def runtime_identifiers() -> dict[str, str]:
+    """Record identifiers that exist; never invent a solver version string."""
+    try:
+        ortools_version = metadata.version("ortools")
+    except metadata.PackageNotFoundError:
+        ortools_version = "not found"
+    return {
+        "python_version": sys.version.split()[0],
+        "platform": platform.platform(),
+        "ortools_version": ortools_version,
+        "cbc_version": "not exposed by the OR-Tools Python API",
+    }
 
 
 def build_manifest(suite_seed: int = DEFAULT_SUITE_SEED) -> BenchmarkManifest:

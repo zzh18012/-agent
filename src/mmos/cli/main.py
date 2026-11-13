@@ -25,6 +25,11 @@ from mmos.agents import (
     release_allowed,
 )
 from mmos.agents.catalog import EXECUTABLE_MODEL_IDS
+from mmos.benchmark_pipeline import (
+    BenchmarkPipelineBlocked,
+    BenchmarkPipelineOptions,
+    run_benchmark_pipeline,
+)
 from mmos.config import get_settings
 from mmos.core.dataset import dataset_fingerprint
 from mmos.core.problem_text import collect_problem_text
@@ -55,12 +60,10 @@ from mmos.data import DataAgent
 from mmos.evidence import (
     EvidenceError,
     add_claim,
-    freeze_benchmark_suite,
     freeze_experiment,
     freeze_optimization,
 )
-from mmos.experiments.knapsack_benchmark import DEFAULT_SUITE_DIR, freeze_manifest
-from mmos.experiments.knapsack_suite import run_knapsack_suite
+from mmos.experiments.knapsack_benchmark import DEFAULT_SUITE_DIR, ManifestError
 from mmos.experiments.optimization_runner import (
     build_experiment_record,
     create_baseline_experiment,
@@ -74,7 +77,6 @@ from mmos.experiments.tournament import Tournament
 from mmos.experiments.workflow import run_experiment_workflow
 from mmos.orchestration import Orchestrator
 from mmos.paper import PaperError, build_paper, render_paper
-from mmos.paper.benchmark_builder import build_benchmark_paper
 from mmos.paper.optimization_builder import build_optimization_paper
 from mmos.pipeline import PipelineBlocked, PipelineOptions, run_pipeline
 from mmos.registries import ModelRegistry
@@ -1367,124 +1369,35 @@ def benchmark_knapsack(
         )
         raise typer.Exit(code=1)
 
-    manifest, _manifest_path = freeze_manifest(suite_dir, suite_seed=suite_seed)
-    console.print(
-        f"Suite: {manifest.suite_id} v{manifest.suite_version}, "
-        f"{len(manifest.instances)} instances, manifest {manifest.manifest_hash[:12]}..."
+    options = BenchmarkPipelineOptions(
+        suite_dir=suite_dir,
+        suite_seed=suite_seed,
+        time_limit_seconds=time_limit,
     )
-    result = run_knapsack_suite(paths, suite_dir, time_limit_seconds=time_limit)
-    artifact_dir = paths.experiments_dir / "benchmarks" / result.benchmark_run_id
-    artifact_path = artifact_dir / "benchmark_result.json"
-    freeze_benchmark_suite(paths, result, artifact_path)
-
-    claim_note = "Auto-generated from the frozen benchmark suite; human acceptance is required."
-    if result.oracle_agreement:
-        try:
-            add_claim(
-                paths,
-                statement=(
-                    f"CBC matched the independently enumerated optimum on "
-                    f"{result.candidate_verified_optimum_count}/{result.n_instances} "
-                    "instances in the frozen benchmark suite."
-                ),
-                evidence_ids=[
-                    f"ev-{result.benchmark_run_id}-candidate-verified",
-                    f"ev-{result.benchmark_run_id}-oracle-agreement",
-                    f"ev-{result.benchmark_run_id}-manifest-hash",
-                ],
-                claim_id=f"claim-benchmark-{result.benchmark_run_id}-optimum",
-                accept=False,
-                notes=claim_note,
-            )
-        except EvidenceError as exc:
-            console.print(f"Warning: optimum claim not registered: {exc}", style="yellow")
     try:
-        add_claim(
+        summary = run_benchmark_pipeline(
             paths,
-            statement=(
-                f"Greedy failed to reach the optimum on {result.greedy.failures}/"
-                f"{result.n_instances} instances; worst relative regret "
-                f"{result.greedy.max_relative_regret} on "
-                f"{result.greedy.worst_instance_id}."
-            ),
-            evidence_ids=[
-                f"ev-{result.benchmark_run_id}-greedy-hit-rate",
-                f"ev-{result.benchmark_run_id}-greedy-failures",
-                f"ev-{result.benchmark_run_id}-greedy-worst",
-            ],
-            claim_id=f"claim-benchmark-{result.benchmark_run_id}-greedy",
-            accept=False,
-            notes=claim_note,
+            options,
+            lambda ast, run_id: RedTeam(_model_or_exit()).run(ast, experiment_id=run_id),
         )
-    except EvidenceError as exc:
-        console.print(f"Warning: greedy claim not registered: {exc}", style="yellow")
+    except BenchmarkPipelineBlocked as exc:
+        console.print(f"Benchmark blocked: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+    except (ManifestError, ValueError, FileNotFoundError, EvidenceError, PaperError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
 
-    ast = build_benchmark_paper(paths, result.benchmark_run_id)
-    report_path = render_paper(paths, ast)
-    review = RedTeam(_model_or_exit()).run(ast, experiment_id=result.benchmark_run_id)
-    review_path = save_red_team_review(paths, review)
-
-    console.print(f"Benchmark run: {result.benchmark_run_id}")
-    console.print(f"Suite status: {result.status}")
-    console.print(f"Oracle agreement: {result.oracle_agreement}")
+    console.print(f"Benchmark run: {summary.benchmark_run_id}")
+    console.print(f"Suite: {summary.suite_id}")
+    console.print(f"Manifest: {summary.manifest_hash}")
     console.print(
-        f"CBC verified {result.candidate_verified_optimum_count}/{result.n_instances}; "
-        f"wins/ties/losses {result.candidate_win_count}/"
-        f"{result.candidate_tie_count}/{result.candidate_loss_count}"
+        f"Instances: {summary.n_instances}; expected experiments "
+        f"{summary.expected_experiment_count}; expected tournaments "
+        f"{summary.expected_tournament_count}"
     )
-    console.print(
-        f"Greedy hit rate {result.greedy.hit_rate:.3f}; worst instance "
-        f"{result.greedy.worst_instance_id or 'none'}"
-    )
-    console.print(f"Paper: {report_path}")
-    console.print(f"Red team: {review.judge.overall.value}")
-
-    if not release_allowed(review):
-        blocked_path = paths.reviews_dir / f"blocked_benchmark_{result.benchmark_run_id}.md"
-        lines = [f"# Benchmark release blocked: {result.benchmark_run_id}", ""]
-        for attack in review.attacks.attacks:
-            verdict = next(
-                verdict
-                for verdict in review.judge.verdicts
-                if verdict.attack_id == attack.attack_id
-            )
-            lines.extend(
-                [
-                    f"## {attack.attack_id}: {attack.severity.value} / "
-                    f"{attack.category.value} -> {verdict.verdict.value}",
-                    attack.argument,
-                    f"Required fix: {attack.required_fix}",
-                    f"Judge: {verdict.rationale}",
-                    "",
-                ]
-            )
-        atomic_write_text(blocked_path, "\n".join(lines))
-        console.print(f"Release blocked; see {blocked_path}", style="red")
-        raise typer.Exit(code=1)
-
-    release = {
-        "benchmark_run_id": result.benchmark_run_id,
-        "suite_id": result.suite_id,
-        "manifest_hash": result.manifest_hash,
-        "status": result.status,
-        "oracle_agreement": result.oracle_agreement,
-        "candidate_verified_optimum_count": result.candidate_verified_optimum_count,
-        "n_instances": result.n_instances,
-        "paper": report_path.relative_to(paths.root).as_posix(),
-        "review": review_path.relative_to(paths.root).as_posix(),
-    }
-    paths.releases_dir.mkdir(parents=True, exist_ok=True)
-    release_json = paths.releases_dir / f"benchmark_{result.benchmark_run_id}.json"
-    release_md = paths.releases_dir / f"benchmark_{result.benchmark_run_id}.md"
-    atomic_write_text(release_json, json.dumps(release, indent=2) + "\n")
-    atomic_write_text(
-        release_md,
-        f"# Benchmark release {result.benchmark_run_id}\n\n"
-        f"- Suite: `{result.suite_id}`\n"
-        f"- Manifest: `{result.manifest_hash}`\n"
-        f"- Instances: {result.n_instances}\n"
-        f"- Oracle agreement: {result.oracle_agreement}\n"
-        f"- CBC verified: {result.candidate_verified_optimum_count}/{result.n_instances}\n"
-        f"- Red team: `{review.judge.overall.value}`\n",
-    )
-    console.print(f"Release: {release_md}")
+    console.print(f"Validation: {summary.validation}")
+    console.print(f"Proposed claims: {', '.join(summary.claim_ids) or 'none'}")
+    console.print(f"Red team: {summary.red_team_overall}")
+    console.print(f"Project state: {summary.state.value}")
+    console.print(f"Paper: {summary.paper_path}")
+    console.print(f"Release: {summary.release_path}")

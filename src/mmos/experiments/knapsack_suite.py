@@ -14,8 +14,11 @@ from mmos.core.project import (
 )
 from mmos.experiments.knapsack_benchmark import (
     enumerate_knapsack,
+    generator_code_hash,
     instance_model,
     load_manifest,
+    methods_code_hash,
+    runtime_identifiers,
     write_manifest_copy,
 )
 from mmos.experiments.optimization_runner import (
@@ -106,7 +109,11 @@ def _aggregate(
         relative = _relative_regret(oracle, objective, feasible)
         if relative is not None:
             relative_regrets.append(relative)
-            if worst_value is None or relative > worst_value:
+            if relative > 0 and (
+                worst_value is None
+                or relative > worst_value
+                or (relative == worst_value and instance_id < (worst_instance or ""))
+            ):
                 worst_value = relative
                 worst_instance = instance_id
     return MethodAggregate(
@@ -318,6 +325,9 @@ def run_knapsack_suite(
         missing_instances=missing,
         started_at=started,
         completed_at=completed,
+        methods_code_hash=methods_code_hash(),
+        generator_code_hash=generator_code_hash(),
+        runtime=runtime_identifiers(),
         git_commit=current_git_commit(),
         experiment_ids=experiment_ids,
         tournament_ids=tournament_ids,

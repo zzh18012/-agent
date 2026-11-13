@@ -298,3 +298,75 @@ Project `knapsack-benchmark-live-20261113-c3dbc6`:
 - No scale sensitivity, multi-objective, Pareto, VRP, simulation, or graph tasks.
 - Phase 17.2E (post-tournament Paper -> Red Team -> Judge revision cycle) was not
   started.
+
+
+## 17.2E — Optimization benchmark release closure
+
+Integrates the frozen suite into the shared optimization lifecycle and closes review.
+
+- `mmos benchmark-knapsack` now drives the existing Orchestrator:
+  INIT -> PROJECT_INGESTED -> PROBLEM_UNDERSTOOD -> PROTOTYPING -> PROTOTYPED ->
+  suite run -> EXPERIMENT_COMPLETED (manifest gate) -> VALIDATING -> VERIFIED ->
+  EVIDENCE_FROZEN -> PAPER_DRAFTED -> RED_TEAM_REVIEW -> READY_FOR_RELEASE ->
+  RELEASED only on Judge PASS.
+- The completion gate is manifest-driven: each manifest instance must have exactly
+  its CBC, ratio-greedy, and enhanced-greedy experiment ids plus one tournament id;
+  artifacts and records are loaded; expected 27 experiments / 9 tournaments are
+  derived from the manifest, never hardcoded.
+- New `mmos/validation/benchmark.py` writes `benchmark_integrity`,
+  `benchmark_oracle`, and `benchmark_aggregate` reports plus `summary.json`:
+  - integrity: manifest/suite/seed/instance hashes, experiment ids and indexes,
+    generator/methods code hashes, recorded runtime identifiers;
+  - oracle: independent exhaustive re-enumeration, CBC objective equality, and a
+    post-hoc feasibility audit of the returned binary assignment (domain, capacity,
+    objective consistency), plus verified/agreement counts;
+  - aggregate: independent recomputation of candidate/greedy/enhanced aggregates
+    and win/tie/loss/feasible/worst-case fields.
+- `BenchmarkSuiteResult` now records `generator_code_hash`, `methods_code_hash`,
+  and runtime identifiers; validator drift is blocking. Suite runs write
+  `suite_run.json` separating project, benchmark-run, experiment, and tournament
+  levels and recording lifecycle/validation/red-team/release state.
+- Resume support: a project in RED_TEAM_REVIEW, or in REQUIRES_HUMAN_REVIEW whose
+  resume state is RED_TEAM_REVIEW, re-enters review without rerunning the suite;
+  integrity/oracle/aggregate validation still runs. This was exercised after a
+  transient DeepSeek connection error.
+- Paper revisions across three live review rounds addressed: method cards and
+  deterministic tie-breaking; regret denominators and median convention with miss
+  sums; stratified and disjoint-partition reconciliation; definitional max-ensemble
+  dominance; int-cast exact comparison with explicit unrecorded-residual disclosure;
+  independent feasibility audit; full SHA-256 hashes, item-data appendix, and
+  evidence samples; unpinned CBC build; and a retitled conformance report rather
+  than a performance benchmark.
+
+### Live release
+
+- Project `benchmark-release-20261113c-20261113-5556c0`; run
+  `benchmark-1a96d969`; suite `knapsack-suite-v1` v1.0.0; suite_v1 files unchanged.
+- Manifest `ecedb6c403c4d2951130c68044151c3ff7cff61e6ee5f60365bca64123515779`;
+  generator code hash `9355b1b9...`; methods code hash `dd11be5e...`.
+- Runtime: Python 3.12.10, Windows-11-10.0.26200-SP0, OR-Tools 9.15.6755; the CBC
+  binary build is not exposed by the OR-Tools Python API.
+- CBC: 9/9 objective matches, 9/9 independent feasibility audits; wins/ties/losses
+  5/4/0 (algebraic from exactness, not a performance finding).
+- Greedy: hits 4/9 (adversarial 1 of 3, seeded random 3 of 5, sanity 0 of 1);
+  misses 5, of which 2 are curated traps and 2 seeded random; max relative regret
+  0.3333 on `greedy_ratio_trap`. Enhanced greedy: hits 4/9; differs only on
+  `random_correlated_2` (208 -> 213), which is definitional dominance, not evidence
+  of improvement.
+- Validation: integrity/oracle/aggregate all passed. Evidence frozen with 81+
+  benchmark records. Two claims remain `proposed` (CBC conformance; scoped greedy
+  descriptive result); none auto-accepted.
+- Red Team: earlier rounds returned revise on real documentation/metric/auditability
+  issues; the final round raised 6 attacks (2 major, 4 minor) and all passed,
+  overall `pass`, blocking false. Release written to
+  `releases/benchmark_benchmark-1a96d969.{json,md}`; project state `RELEASED`.
+- Tests: 192 passed; ruff and pyright clean.
+
+### Remaining limitations
+
+- One problem family (0/1 knapsack), synthetic data, n=3-10, single scale; no seed,
+  capacity, or density sweep.
+- The CBC binary build is unpinned; evidence JSON remains a private project artifact.
+- Enhanced greedy is aggregated, not part of the binary tournament.
+- No multi-objective/Pareto, VRP, simulation, graph, or realistic-scale evidence.
+- The next phase (17.3 or later) was not started.

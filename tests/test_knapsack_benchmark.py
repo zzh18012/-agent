@@ -12,6 +12,7 @@ from mmos.experiments.knapsack_benchmark import (
     enumerate_knapsack,
     instance_model,
     load_manifest,
+    methods_code_hash,
 )
 from mmos.experiments.knapsack_suite import _aggregate, _relative_regret, run_knapsack_suite
 from mmos.experiments.optimization_runner import solve_enhanced_greedy, solve_greedy
@@ -140,8 +141,11 @@ def test_full_suite_vertical_slice(tmp_path: Path) -> None:
 
     assert result.status == "complete"
     assert result.n_instances == len(manifest.instances)
+    assert result.methods_code_hash == methods_code_hash()
     assert result.oracle_agreement is True
     assert result.candidate_verified_optimum_count == result.n_instances
+    assert sum(len(ids) for ids in result.experiment_ids.values()) == 3 * result.n_instances
+    assert len(result.tournament_ids) == result.n_instances
     assert result.candidate_feasible_count == result.n_instances
     assert len(result.per_instance) == result.n_instances
     assert all(instance.tournament_id for instance in result.per_instance)
@@ -161,8 +165,34 @@ def test_full_suite_vertical_slice(tmp_path: Path) -> None:
     assert "benchmark.instance.greedy_ratio_trap.oracle_optimum" in keys
 
     paper = build_benchmark_paper(paths, result.benchmark_run_id)
-    assert len(paper.tables) == 2
+    assert len(paper.tables) == 6
     assert len(paper.tables[0].rows) == result.n_instances
+    assert len(paper.tables[1].rows) == result.n_instances
+    assert len(paper.tables[4].rows) == result.n_instances
+    assert all(table.evidence_ids for table in paper.tables)
+    assert all(len(row[6]) == 64 for row in paper.tables[0].rows)
     titles = " ".join(section.heading for section in paper.sections)
-    assert "Benchmark purpose" in titles
-    assert "Adversarial findings" in titles
+    assert "Purpose and conformance scope" in titles
+    assert "Per-instance descriptive results" in titles
+    assert "Conformance" in paper.title
+    assert "Benchmark Report" not in paper.title
+    assert "Adversarial findings" not in titles
+    assert "CBC - greedy" in paper.tables[1].columns
+    assert "Enhanced - greedy" in paper.tables[1].columns
+    assert "CBC status" in paper.tables[1].columns
+    assert "Time limit (s)" in paper.tables[1].columns
+    assert "Independent feasible" in paper.tables[1].columns
+    assert "Mean rel regret over misses" in paper.tables[3].columns
+    assert "Miss regret sum" in paper.tables[3].columns
+    assert "partition table above" in paper.tables[2].caption
+    assert "Partition" in paper.tables[0].columns
+    text = paper.abstract + " ".join(
+        block for section in paper.sections for block in section.blocks
+    )
+    assert "do not establish general superiority" in text
+    assert "random_correlated_2" in text
+    assert "max-ensemble" in text
+    assert "exact integer equality" in text
+    assert "single-draw" in text
+    assert "Python" in text
+    assert any(cell == "18" for row in paper.tables[1].rows for cell in row)
