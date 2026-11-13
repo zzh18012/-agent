@@ -13,6 +13,7 @@ from mmos.schemas.optimization import (
     OptimizationSpec,
     relative_improvement,
 )
+from mmos.schemas.optimization_tournament import OptimizationTournamentResult
 from mmos.schemas.tracking import MLflowRunRecord
 
 
@@ -165,6 +166,66 @@ def log_optimization_run(
     )
     atomic_write_text(
         paths.experiments_dir / spec.experiment_id / "mlflow_run.json",
+        mlflow_record.model_dump_json(indent=2) + "\n",
+    )
+    return mlflow_record
+
+
+def log_optimization_tournament(
+    paths: ProjectPaths, result: OptimizationTournamentResult
+) -> MLflowRunRecord:
+    uri = tracking_uri(paths)
+    mlflow.set_tracking_uri(uri)
+    client = MlflowClient(tracking_uri=uri)
+    experiment_id = _experiment_id(client, paths)
+    candidate = next(entry for entry in result.entries if entry.entry_role.value == "candidate")
+    baseline = next(entry for entry in result.entries if entry.entry_role.value == "baseline")
+
+    with mlflow.start_run(
+        experiment_id=experiment_id, run_name=f"tournament:{result.tournament_id}"
+    ) as run:
+        mlflow.set_tags(
+            {
+                "project_id": paths.root.name,
+                "task_family": "optimization",
+                "tournament_id": result.tournament_id,
+                "instance_hash": result.instance_hash,
+                "candidate_experiment_id": candidate.experiment_id,
+                "baseline_experiment_id": baseline.experiment_id,
+                "winner_experiment_id": result.winner_experiment_id or "",
+                "comparison_status": result.winner_status.value,
+            }
+        )
+        mlflow.log_param("objective_tolerance", result.objective_tolerance)
+        if candidate.objective_value is not None:
+            mlflow.log_metric("candidate.objective_value", candidate.objective_value)
+        if baseline.objective_value is not None:
+            mlflow.log_metric("baseline.objective_value", baseline.objective_value)
+        if candidate.objective_value is not None and baseline.objective_value is not None:
+            improvement = relative_improvement(
+                candidate.objective_sense,
+                candidate.objective_value,
+                baseline.objective_value,
+            )
+            if improvement is not None:
+                mlflow.log_metric("candidate.relative_improvement", improvement)
+
+        from mmos.experiments.optimization_tournament import optimization_tournament_dir
+
+        mlflow.log_artifacts(
+            str(optimization_tournament_dir(paths, result.tournament_id)),
+            artifact_path="tournament",
+        )
+        run_id = run.info.run_id
+
+    mlflow_record = MLflowRunRecord(
+        run_id=run_id,
+        tracking_uri=uri,
+        experiment_name=paths.root.name,
+        logged_at=datetime.now(UTC).replace(microsecond=0),
+    )
+    atomic_write_text(
+        optimization_tournament_dir(paths, result.tournament_id) / "mlflow_run.json",
         mlflow_record.model_dump_json(indent=2) + "\n",
     )
     return mlflow_record

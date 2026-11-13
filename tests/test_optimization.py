@@ -14,13 +14,16 @@ from mmos.core.project import (
     load_project_config,
     save_optimization_spec,
 )
-from mmos.evidence import freeze_optimization, load_evidence_index
+from mmos.evidence import freeze_optimization, load_claims, load_evidence_index
 from mmos.experiments.optimization_runner import (
     comparison_diagnostics,
     create_baseline_experiment,
     run_optimization,
     solve_greedy,
     solve_ortools,
+)
+from mmos.experiments.optimization_tournament import (
+    load_optimization_tournament,
 )
 from mmos.orchestration import Orchestrator
 from mmos.paper import render_markdown
@@ -368,3 +371,21 @@ def test_experiment_identity_and_mlflow_are_linked(tmp_path: Path, monkeypatch) 
     assert "experiment.mlflow_run_id" in keys
     assert "experiment.instance_hash" in keys
     assert "experiment.linked_experiment_id" in keys
+    assert "tournament.status" in keys
+    assert "tournament.winner_experiment_id" in keys
+    assert "tournament.relative_improvement" in keys
+
+    tournaments = list(paths.tournaments_dir.glob("tournament-*/tournament.json"))
+    assert tournaments
+    tournament = load_optimization_tournament(paths, tournaments[0].parent.name)
+    assert tournament.winner_experiment_id == spec.experiment_id
+    assert (tournaments[0].parent / "decision_trace.md").exists()
+    assert (tournaments[0].parent / "mlflow_run.json").exists()
+
+    claims = load_claims(paths)
+    assert claims
+    assert "higher objective" in claims[0].statement
+    assert "generally" not in claims[0].statement.lower()
+    paper_text = (paths.root / "paper" / "report.md").read_text(encoding="utf-8")
+    assert "Optimization comparison" in paper_text
+    assert "benchmark instance" in paper_text

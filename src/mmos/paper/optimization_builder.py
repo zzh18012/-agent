@@ -147,6 +147,66 @@ def build_optimization_paper(paths: ProjectPaths, experiment_id: str) -> PaperAS
         )
     )
 
+    tournament_status = by_key.get("tournament.status")
+    if tournament_status is not None:
+
+        def tournament_value(key: str) -> str:
+            record = by_key.get(key)
+            return record.display_value if record is not None else "unknown"
+
+        winner = tournament_value("tournament.winner_experiment_id")
+        candidate_id = tournament_value("tournament.candidate_experiment_id")
+        baseline_id = tournament_value("tournament.baseline_experiment_id")
+        sense = tournament_value("tournament.objective_sense")
+        candidate_objective = tournament_value("tournament.candidate_objective")
+        baseline_objective = tournament_value("tournament.baseline_objective")
+        relative = tournament_value("tournament.relative_improvement")
+        candidate_feasible = tournament_value("tournament.candidate_feasible")
+        baseline_feasible = tournament_value("tournament.baseline_feasible")
+        candidate_optimality = tournament_value("tournament.candidate_optimality")
+        baseline_role = tournament_value("tournament.baseline_role")
+        verification = tournament_value("tournament.independent_verification")
+        warnings = tournament_value("tournament.warnings")
+        status = tournament_status.display_value
+        if status == "winner" and winner == candidate_id:
+            conclusion = (
+                f"On this benchmark instance, the candidate experiment achieved a "
+                f"higher {sense} objective ({candidate_objective}) than the baseline "
+                f"({baseline_objective})."
+            )
+        elif status == "equivalent":
+            conclusion = (
+                "The candidate and baseline are objective-equivalent on this benchmark "
+                "instance within the configured tolerance."
+            )
+        elif status == "winner":
+            conclusion = (
+                f"On this benchmark instance, the baseline experiment achieved a "
+                f"better {sense} objective than the candidate."
+            )
+        else:
+            conclusion = (
+                "No winner was declared: the tournament result is "
+                f"{status}; no superiority claim is made."
+            )
+        sections.append(
+            PaperSection(
+                heading="Optimization comparison",
+                blocks=[
+                    conclusion,
+                    f"Candidate `{candidate_id}` (feasible={candidate_feasible}, "
+                    f"optimality={candidate_optimality}); baseline `{baseline_id}` "
+                    f"(feasible={baseline_feasible}, role={baseline_role}).",
+                    f"Objective sense: {sense}. Candidate objective: "
+                    f"{candidate_objective}; baseline objective: {baseline_objective}; "
+                    f"relative improvement: {relative}.",
+                    f"Independent verification: {verification}. Warnings: {warnings}.",
+                    "These results refer to the evaluated instance only; they do not "
+                    "establish general superiority of one method class over another.",
+                ],
+            )
+        )
+
     validation_path = paths.experiment_dir(experiment_id) / "validation" / "summary.json"
     validation_text = "not available"
     if validation_path.exists():

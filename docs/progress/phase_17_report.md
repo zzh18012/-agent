@@ -182,3 +182,57 @@ Project `milp-identity-final-2-20261113-0d276d`:
 - TIME_LIMIT vs feasible-incumbent semantics are represented by status and
   termination_condition but were not forced in this phase's small benchmark.
 - Optimization Tournament, adversarial instances, and multi-objective remain 17.2C–E.
+
+
+## 17.2C — Optimization Tournament
+
+Implements a formal lexicographic optimization tournament over Optimization
+Experiments only.
+
+- New schemas: `OptimalityClass`, `BaselineRole`, `MethodFamily`, `WinnerStatus`,
+  `OptimizationTournamentEntry`, `ComparisonMatrixEntry`,
+  `OptimizationTournamentResult`.
+- Tournament gates: comparison compatibility → validity → feasibility → objective →
+  optimality evidence → gap → independent verification → runtime/simplicity.
+- Comparison uses `comparison_diagnostics`; differing time limits are allowed but
+  recorded. No weighted score is used.
+- Infeasible experiments cannot win even with attractive objective values. Invalid
+  experiments are retained in the result but excluded from selection.
+- Optimality classes distinguish `proven_optimal` (solver optimal + independent
+  enumeration agreement), `solver_optimal`, `feasible_not_proven_optimal`,
+  `infeasible`, and `invalid`.
+- Objective improvement reuses `relative_improvement(sense, candidate, baseline)`;
+  maximize/minimize regression tests are present.
+- Equivalent objectives within tolerance produce `EQUIVALENT` with no forced winner.
+- Tournament artifacts: `tournament.json` and `decision_trace.md`; a tournament
+  MLflow run is logged in the same project ledger.
+- Evidence freeze accepts `tournament_id` and records status, winner, objectives,
+  feasibility, optimality classes, verification, baseline role, improvements,
+  decision trace, warnings, MLflow id, and links to both experiments.
+- Paper gains an `Optimization comparison` section restricted to the evaluated
+  instance; no general method-superiority language.
+- Auto-claims are `proposed` only and limited to instance-level comparison.
+
+### Live run
+
+Project `milp-tournament-live-20261113-aa5fb7`:
+
+- Tournament `tournament-8862ebdd`, status winner, winner `exp-milp-knapsack`.
+- Candidate objective 360 (maximize), baseline 350; absolute +10, relative +2.857%.
+- Both feasible. Candidate `proven_optimal` via exhaustive enumeration of 1024
+  subsets; baseline `sanity_baseline`, `feasible_not_proven_optimal`, no bound/gap.
+- MLflow: candidate `b029b3f2aaa143488eef8ce7b357ac24`, baseline
+  `d436143368294d08914d9d5e00160f77`, tournament
+  `81d8209107fd450391c256312a5c18e4`.
+- Instance hash: `5b6c0a6b73925766eccd54d72b4d4b792b23d61ba2e9e648bd9cd0eed2a9cebd`.
+- Evidence: 63 records, including 19 `tournament.*` keys.
+- Claim remains `proposed`: candidate achieved a higher objective than the greedy
+  sanity baseline on the evaluated benchmark instance.
+- Red Team returned revise (5 major, 4 minor); PASS-only gate blocked release;
+  project state `REQUIRES_HUMAN_REVIEW`. No release summary.
+- Tests: 173 passed, 3 deselected; ruff and pyright clean.
+
+### Deliberately not done (17.2D/E)
+
+Adversarial MILP instances, multi-objective/Pareto/hypervolume, VRP/simulation/graph,
+and a post-tournament Paper -> Red Team -> Judge revision cycle.

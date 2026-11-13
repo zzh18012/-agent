@@ -22,6 +22,7 @@ from mmos.schemas.common import MMOSModel
 from mmos.schemas.evidence import ClaimRecord, EvidenceIndex, EvidenceRecord
 from mmos.schemas.experiment import ExperimentResult
 from mmos.schemas.optimization import relative_improvement
+from mmos.schemas.optimization_tournament import OptimizationTournamentResult
 from mmos.schemas.validation import ValidationReport, ValidationStatus
 
 REQUIRED_VALIDATORS = ("leakage", "numerical", "statistical", "reproducibility", "temporal")
@@ -491,7 +492,12 @@ def add_claim(
     return claim
 
 
-def freeze_optimization(paths: ProjectPaths, experiment_id: str) -> list[EvidenceRecord]:
+def freeze_optimization(
+    paths: ProjectPaths,
+    experiment_id: str,
+    *,
+    tournament_id: str | None = None,
+) -> list[EvidenceRecord]:
     validation_dir = paths.experiment_dir(experiment_id) / "validation"
     summary_path = validation_dir / "summary.json"
     report_path = validation_dir / "optimization.json"
@@ -766,6 +772,125 @@ def freeze_optimization(paths: ProjectPaths, experiment_id: str) -> list[Evidenc
             spec.time_limit_seconds,
         )
     )
+
+    tournament_dir = paths.tournaments_dir / tournament_id if tournament_id is not None else None
+    if tournament_dir is not None and (tournament_dir / "tournament.json").exists():
+        tournament_path = tournament_dir / "tournament.json"
+        tournament = OptimizationTournamentResult.model_validate_json(
+            tournament_path.read_text(encoding="utf-8")
+        )
+        tournament_hash = sha256_file(tournament_path)
+        candidate = next(
+            entry for entry in tournament.entries if entry.entry_role.value == "candidate"
+        )
+        baseline = next(
+            entry for entry in tournament.entries if entry.entry_role.value == "baseline"
+        )
+        improvement = None
+        if candidate.objective_value is not None and baseline.objective_value is not None:
+            improvement = relative_improvement(
+                candidate.objective_sense,
+                candidate.objective_value,
+                baseline.objective_value,
+            )
+        tournament_mlflow = tournament_dir / "mlflow_run.json"
+        tournament_run_id = (
+            json.loads(tournament_mlflow.read_text(encoding="utf-8")).get("run_id", "")
+            if tournament_mlflow.exists()
+            else ""
+        )
+        provenance["tournament_path"] = tournament_path.relative_to(paths.root).as_posix()
+        provenance["tournament_sha256"] = tournament_hash
+        provenance["tournament_id"] = tournament.tournament_id
+        provenance["tournament_mlflow_run_id"] = tournament_run_id
+        provenance["candidate_experiment_id"] = candidate.experiment_id
+        provenance["baseline_experiment_id"] = baseline.experiment_id
+
+        def tournament_record(
+            evidence_id: str, key: str, value: float | int | str
+        ) -> EvidenceRecord:
+            display_value = f"{value:.10g}" if isinstance(value, float) else str(value)
+            return EvidenceRecord(
+                evidence_id=evidence_id,
+                key=key,
+                raw_value=value,
+                display_value=display_value,
+                experiment_id=experiment_id,
+                artifact_path=tournament_path.relative_to(paths.root).as_posix(),
+                artifact_hash=tournament_hash,
+                source_field=key,
+                validation_reports=[report.validator],
+                verified_at=now,
+                provenance=provenance,
+            )
+
+        tournament_values: list[tuple[str, str, float | int | str]] = [
+            ("status", "tournament.status", tournament.winner_status.value),
+            (
+                "winner",
+                "tournament.winner_experiment_id",
+                tournament.winner_experiment_id or "none",
+            ),
+            ("candidate-id", "tournament.candidate_experiment_id", candidate.experiment_id),
+            ("baseline-id", "tournament.baseline_experiment_id", baseline.experiment_id),
+            ("sense", "tournament.objective_sense", candidate.objective_sense),
+            ("comparison", "tournament.comparison_status", tournament.winner_status.value),
+            (
+                "candidate-feasible",
+                "tournament.candidate_feasible",
+                str(candidate.feasible).lower(),
+            ),
+            (
+                "baseline-feasible",
+                "tournament.baseline_feasible",
+                str(baseline.feasible).lower(),
+            ),
+            (
+                "candidate-optimality",
+                "tournament.candidate_optimality",
+                candidate.optimality_class.value,
+            ),
+            (
+                "baseline-optimality",
+                "tournament.baseline_optimality",
+                baseline.optimality_class.value,
+            ),
+            (
+                "verification",
+                "tournament.independent_verification",
+                candidate.independent_verification_method or "unavailable",
+            ),
+            (
+                "baseline-role",
+                "tournament.baseline_role",
+                baseline.baseline_role.value if baseline.baseline_role else "none",
+            ),
+            ("decision-trace", "tournament.decision_trace", " | ".join(tournament.decision_trace)),
+            ("warnings", "tournament.warnings", " | ".join(tournament.warnings) or "none"),
+            ("mlflow", "tournament.mlflow_run_id", tournament_run_id or "unavailable"),
+        ]
+        if candidate.objective_value is not None:
+            tournament_values.append(
+                ("candidate-objective", "tournament.candidate_objective", candidate.objective_value)
+            )
+        if baseline.objective_value is not None:
+            tournament_values.append(
+                ("baseline-objective", "tournament.baseline_objective", baseline.objective_value)
+            )
+        if improvement is not None:
+            tournament_values.append(
+                ("relative-improvement", "tournament.relative_improvement", improvement)
+            )
+        if candidate.objective_value is not None and baseline.objective_value is not None:
+            tournament_values.append(
+                (
+                    "absolute-improvement",
+                    "tournament.absolute_improvement",
+                    candidate.objective_value - baseline.objective_value,
+                )
+            )
+        for suffix, key, value in tournament_values:
+            records.append(tournament_record(f"ev-{experiment_id}-tournament-{suffix}", key, value))
 
     index = load_evidence_index(paths)
     for evidence in records:
