@@ -1,3 +1,5 @@
+import hashlib
+import json
 from datetime import datetime
 from enum import StrEnum
 from typing import Literal
@@ -5,6 +7,15 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from mmos.schemas.common import MMOSModel
+
+
+class ExperimentStatus(StrEnum):
+    CREATED = "created"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    INVALID = "invalid"
+    VALIDATED = "validated"
 
 
 class VariableType(StrEnum):
@@ -80,13 +91,53 @@ def relative_improvement(
     return (baseline - candidate) / abs(baseline)
 
 
+def optimization_instance_hash(model: OptimizationModel) -> str:
+    payload = {
+        "sense": model.sense,
+        "variables": sorted(
+            (
+                {
+                    "name": variable.name,
+                    "type": variable.type.value,
+                    "lower": variable.lower,
+                    "upper": variable.upper,
+                }
+                for variable in model.variables
+            ),
+            key=lambda item: item["name"],
+        ),
+        "objective": {name: model.objective[name] for name in sorted(model.objective)},
+        "constraints": sorted(
+            (
+                {
+                    "name": constraint.name,
+                    "coefficients": {
+                        name: constraint.coefficients[name]
+                        for name in sorted(constraint.coefficients)
+                    },
+                    "lower": constraint.lower,
+                    "upper": constraint.upper,
+                }
+                for constraint in model.constraints
+            ),
+            key=lambda item: item["name"],
+        ),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 class OptimizationSpec(MMOSModel):
     experiment_id: str
     problem_id: str
     model: OptimizationModel
     solver: str = "ortools.cbc"
+    solver_parameters: dict[str, str] = Field(default_factory=dict)
     time_limit_seconds: float = Field(default=30.0, gt=0)
     baseline: Literal["greedy_feasible"] = "greedy_feasible"
+    instance_hash: str | None = None
+    random_seed: int | None = None
+    acceptance_criteria: list[str] = Field(default_factory=list)
 
 
 class OptimizationSolution(MMOSModel):
@@ -100,13 +151,19 @@ class OptimizationSolution(MMOSModel):
     constraint_violations: list[str] = Field(default_factory=list)
     runtime_seconds: float = 0.0
     solver: str = ""
+    solver_version: str = "unavailable"
+    termination_condition: str | None = None
+    absolute_gap: float | None = None
+    node_count: int | None = None
 
 
 class EnumerationResult(MMOSModel):
+    method: str = "exhaustive_enumeration"
     status: Literal["complete", "skipped"]
     evaluated_subsets: int = 0
     optimum_value: float | None = None
     optimal_subsets: int | None = None
+    matches_solver_result: bool | None = None
     reason: str | None = None
 
 
@@ -118,4 +175,26 @@ class OptimizationResult(MMOSModel):
     solutions: list[OptimizationSolution] = Field(min_length=1)
     selected_method: str | None = None
     enumeration: EnumerationResult | None = None
+    instance_hash: str | None = None
+    solver_backend: str = "unavailable"
+    solver_version: str = "unavailable"
     generated_at: datetime
+
+
+class OptimizationExperimentRecord(MMOSModel):
+    experiment_id: str
+    project_id: str
+    task_family: Literal["optimization"] = "optimization"
+    created_at: datetime
+    status: ExperimentStatus = ExperimentStatus.CREATED
+    instance_hash: str
+    config_hash: str
+    git_commit: str = "unknown"
+    solver: str = ""
+    solver_version: str = "unavailable"
+    solver_backend: str = "unavailable"
+    mlflow_run_id: str | None = None
+    artifacts: list[str] = Field(default_factory=list)
+    validation_status: dict[str, str] = Field(default_factory=dict)
+    linked_experiment_ids: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)

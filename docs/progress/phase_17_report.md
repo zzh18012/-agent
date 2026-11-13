@@ -128,3 +128,57 @@ Project `milp-lifecycle-live-20261113-0d233f` (task optimization):
 - Optimization Tournament (objective/gap/feasibility/runtime/baseline).
 - Adversarial MILP instances where greedy fails materially.
 - Re-run Paper -> Red Team -> Judge after those additions.
+
+
+## 17.2B — Optimization experiment identity and MLflow
+
+Optimization now has the same formal experiment identity as prediction:
+
+- `ExperimentStatus` distinguishes CREATED/RUNNING/SUCCEEDED/FAILED/INVALID/VALIDATED
+  at the experiment level; project lifecycle state remains separate.
+- `optimization_instance_hash` is a canonical hash of variables, objective, and
+  constraints; changing an objective value or capacity changes it.
+- `OptimizationExperimentRecord` stores experiment_id, project_id, task_family,
+  status, instance_hash, config_hash, git commit, solver identity, MLflow run id,
+  artifacts, validation status, and linked experiment ids.
+- The greedy baseline is a separate formal experiment
+  (`<candidate>-baseline-greedy`) with its own spec, result, run record, solver log,
+  experiment record, and MLflow run.
+- `log_optimization_run` uses the existing per-project SQLite MLflow ledger, tags,
+  params, metrics, and artifact root; there is no second tracking system.
+- Solver identity records OR-Tools 9.15.6755 and backend CBC; CBC native console
+  output is unavailable through pywraplp and is explicitly logged as such.
+- Enumeration is recorded as `exhaustive_enumeration` with 1024 subsets, optimum 360,
+  one optimal subset, and `matches_solver_result=true`.
+- Evidence provenance now includes instance hash, MLflow run id, git commit,
+  experiment record path/hash, solver backend/version, termination condition, and
+  linked baseline experiment id.
+- `comparison_diagnostics` enforces same instance/objective/sense/constraints and
+  discloses differing time limits without treating them as incomparable.
+
+### Live run
+
+Project `milp-identity-final-2-20261113-0d276d`:
+
+- Candidate experiment: `exp-milp-knapsack`, status validated,
+  MLflow run `4e69333994b24179933bd80f483ef359`.
+- Baseline experiment: `exp-milp-knapsack-baseline-greedy`, status succeeded,
+  MLflow run `46cce9b45f22491db0225e5311f1851a`.
+- Instance hash: `5b6c0a6b73925766eccd54d72b4d4b792b23d61ba2e9e648bd9cd0eed2a9cebd`
+  (shared by candidate and baseline).
+- CBC: status optimal, objective 360, best bound 360, absolute/relative gap 0,
+  runtime 0.00249 s, feasible, no constraint violations.
+- Enumeration: 1024 subsets, optimum 360, matches solver.
+- Evidence: 44 records; optimization validation passed.
+- Red Team: revise, blocking false; PASS-only gate blocked release and moved the
+  project to REQUIRES_HUMAN_REVIEW.
+- Both solver logs and both experiment records are present; artifact lists include
+  spec, result, run record, and solver log.
+
+### Constraints / disclosures
+
+- Node counts are not exposed by pywraplp and are recorded as unavailable.
+- Solver-native CBC logs are not exposed; solver_log.txt records returned metadata.
+- TIME_LIMIT vs feasible-incumbent semantics are represented by status and
+  termination_condition but were not forced in this phase's small benchmark.
+- Optimization Tournament, adversarial instances, and multi-objective remain 17.2C–E.

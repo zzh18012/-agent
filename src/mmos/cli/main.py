@@ -41,6 +41,7 @@ from mmos.core.project import (
     resolve_project,
     save_council_decision,
     save_critiques,
+    save_experiment_record,
     save_experiment_spec,
     save_optimization_spec,
     save_problem_spec,
@@ -57,7 +58,11 @@ from mmos.evidence import (
     freeze_experiment,
     freeze_optimization,
 )
-from mmos.experiments.optimization_runner import run_optimization
+from mmos.experiments.optimization_runner import (
+    build_experiment_record,
+    create_baseline_experiment,
+    run_optimization,
+)
 from mmos.experiments.planner import ExperimentPlanner
 from mmos.experiments.tournament import Tournament
 from mmos.experiments.workflow import run_experiment_workflow
@@ -68,10 +73,15 @@ from mmos.pipeline import PipelineBlocked, PipelineOptions, run_pipeline
 from mmos.registries import ModelRegistry
 from mmos.schemas.data import DataSchema
 from mmos.schemas.experiment import ExperimentResult
-from mmos.schemas.optimization import OptimizationSpec
+from mmos.schemas.optimization import (
+    ExperimentStatus,
+    OptimizationSpec,
+    optimization_instance_hash,
+)
 from mmos.schemas.project import SourceRole
 from mmos.schemas.proposal import CritiqueReport
 from mmos.schemas.states import ESCAPE_STATES, SUPPORTED_TASKS, ProjectState, TaskFamily
+from mmos.tracking import log_optimization_run
 from mmos.utils.logging import configure_logging
 from mmos.validation import validate_experiment
 from mmos.validation.optimization import validate_optimization_experiment
@@ -1091,10 +1101,34 @@ def optimize(
         console.print(f"Error: experiment already exists: {spec.experiment_id}", style="red")
         raise typer.Exit(code=1)
 
+    spec = spec.model_copy(update={"instance_hash": optimization_instance_hash(spec.model)})
     orchestrator = Orchestrator(paths)
     save_optimization_spec(paths, spec)
     orchestrator.transition(ProjectState.PROTOTYPING, reason="optimization spec planned")
     result = run_optimization(paths, spec.experiment_id)
+
+    baseline_spec, baseline_result = create_baseline_experiment(paths, spec, result)
+    baseline_id = baseline_spec.experiment_id
+    candidate_record = build_experiment_record(
+        paths,
+        spec,
+        result,
+        status=ExperimentStatus.SUCCEEDED,
+        linked_experiment_ids=[baseline_id],
+    )
+    candidate_mlflow = log_optimization_run(paths, spec, result, candidate_record)
+    candidate_record = candidate_record.model_copy(
+        update={"mlflow_run_id": candidate_mlflow.run_id}
+    )
+    save_experiment_record(paths, candidate_record)
+
+    baseline_record = build_experiment_record(
+        paths, baseline_spec, baseline_result, status=ExperimentStatus.SUCCEEDED
+    )
+    baseline_mlflow = log_optimization_run(paths, baseline_spec, baseline_result, baseline_record)
+    baseline_record = baseline_record.model_copy(update={"mlflow_run_id": baseline_mlflow.run_id})
+    save_experiment_record(paths, baseline_record)
+
     orchestrator.advance_to(
         ProjectState.EXPERIMENT_COMPLETED, reason="optimization experiment completed"
     )
@@ -1120,12 +1154,23 @@ def optimize(
         for issue in report.issues:
             console.print(f"  [{issue.severity.value}] {issue.code}: {issue.message}")
     if any(report.blocking for report in reports):
+        save_experiment_record(
+            paths,
+            candidate_record.model_copy(update={"status": ExperimentStatus.INVALID}),
+        )
         orchestrator.transition(
             ProjectState.REQUIRES_HUMAN_REVIEW,
             reason="optimization validation failed",
         )
         console.print("Optimization validation FAILED.", style="red")
         raise typer.Exit(code=1)
+    candidate_record = candidate_record.model_copy(
+        update={
+            "status": ExperimentStatus.VALIDATED,
+            "validation_status": {report.validator: report.status.value for report in reports},
+        }
+    )
+    save_experiment_record(paths, candidate_record)
     orchestrator.advance_to(ProjectState.VERIFIED, reason="optimization validators passed")
 
     records = freeze_optimization(paths, spec.experiment_id)
@@ -1192,6 +1237,10 @@ def optimize(
 
     release = {
         "experiment_id": spec.experiment_id,
+        "baseline_experiment_id": baseline_id,
+        "mlflow_run_id": candidate_mlflow.run_id,
+        "baseline_mlflow_run_id": baseline_mlflow.run_id,
+        "instance_hash": spec.instance_hash,
         "model": spec.model.name,
         "sense": spec.model.sense,
         "selected_method": result.selected_method,
@@ -1223,5 +1272,15 @@ def optimize(
         f"- Paper: `{report_path.relative_to(paths.root).as_posix()}`\n",
     )
     orchestrator.advance_to(ProjectState.RELEASED, reason="optimization release written")
+    console.print(f"Project: {paths.root.name}")
+    console.print(f"Candidate experiment: {spec.experiment_id}")
+    console.print(f"Baseline experiment: {baseline_id}")
+    console.print(f"MLflow run: {candidate_mlflow.run_id}")
+    console.print(f"Baseline MLflow run: {baseline_mlflow.run_id}")
+    console.print(f"Instance hash: {spec.instance_hash}")
+    console.print(f"Solver status: {solver_solution.status}")
+    console.print(f"Objective: {objective}")
+    console.print(f"Feasible: {solver_solution.feasible}")
+    console.print(f"Validation: {candidate_record.validation_status}")
     console.print(f"State: {load_project_config(paths).state.value}")
     console.print(f"Release: {release_md}")

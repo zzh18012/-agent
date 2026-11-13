@@ -1,6 +1,7 @@
 import hashlib
 import re
 import secrets
+import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -8,7 +9,11 @@ from pathlib import Path
 import yaml
 
 from mmos.schemas.experiment import ExperimentSpec
-from mmos.schemas.optimization import OptimizationResult, OptimizationSpec
+from mmos.schemas.optimization import (
+    OptimizationExperimentRecord,
+    OptimizationResult,
+    OptimizationSpec,
+)
 from mmos.schemas.pipeline import PipelineState, ReleaseSummary
 from mmos.schemas.problem import ProblemSpec
 from mmos.schemas.project import ProjectConfig, ProjectManifest
@@ -152,6 +157,20 @@ class ProjectPaths:
         return self.root / "logs"
 
 
+def current_git_commit() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=Path(__file__).resolve().parents[3],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    return result.stdout.strip() if result.returncode == 0 else "unknown"
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -287,6 +306,23 @@ def save_optimization_result(paths: ProjectPaths, result: OptimizationResult) ->
 def load_optimization_result(paths: ProjectPaths, experiment_id: str) -> OptimizationResult:
     return OptimizationResult.model_validate_json(
         optimization_result_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
+
+
+def experiment_record_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "experiment_record.json"
+
+
+def save_experiment_record(paths: ProjectPaths, record: OptimizationExperimentRecord) -> Path:
+    target = experiment_record_file(paths, record.experiment_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, record.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_experiment_record(paths: ProjectPaths, experiment_id: str) -> OptimizationExperimentRecord:
+    return OptimizationExperimentRecord.model_validate_json(
+        experiment_record_file(paths, experiment_id).read_text(encoding="utf-8")
     )
 
 

@@ -7,7 +7,9 @@ import yaml
 from mmos.core.project import (
     ProjectPaths,
     atomic_write_text,
+    experiment_record_file,
     experiment_spec_file,
+    load_experiment_record,
     load_experiment_spec,
     load_optimization_result,
     load_optimization_spec,
@@ -509,12 +511,29 @@ def freeze_optimization(paths: ProjectPaths, experiment_id: str) -> list[Evidenc
     result_hash = sha256_file(result_path)
     spec_hash = sha256_file(spec_path)
     now = datetime.now(UTC).replace(microsecond=0)
+    mlflow_record_path = paths.experiment_dir(experiment_id) / "mlflow_run.json"
+    mlflow_run_id = (
+        json.loads(mlflow_record_path.read_text(encoding="utf-8")).get("run_id", "")
+        if mlflow_record_path.exists()
+        else ""
+    )
+    record_path = experiment_record_file(paths, experiment_id)
+    experiment_record = (
+        load_experiment_record(paths, experiment_id) if record_path.exists() else None
+    )
     provenance = {
         "kind": "optimization",
         "result_path": result_path.relative_to(paths.root).as_posix(),
         "result_sha256": result_hash,
         "spec_path": spec_path.relative_to(paths.root).as_posix(),
         "spec_sha256": spec_hash,
+        "instance_hash": result.instance_hash or spec.instance_hash or "",
+        "mlflow_run_id": mlflow_run_id,
+        "experiment_record_path": (
+            record_path.relative_to(paths.root).as_posix() if record_path.exists() else ""
+        ),
+        "experiment_record_sha256": sha256_file(record_path) if record_path.exists() else "",
+        "git_commit": experiment_record.git_commit if experiment_record else "unknown",
     }
 
     def record(evidence_id: str, key: str, value: float | int | str) -> EvidenceRecord:
@@ -565,7 +584,15 @@ def freeze_optimization(paths: ProjectPaths, experiment_id: str) -> list[Evidenc
                 str(solution.feasible).lower(),
             )
         )
-        for field in ("objective_value", "best_bound", "optimality_gap"):
+        for field in (
+            "objective_value",
+            "best_bound",
+            "optimality_gap",
+            "absolute_gap",
+            "node_count",
+            "solver_version",
+            "termination_condition",
+        ):
             value = getattr(solution, field)
             if value is None:
                 continue
@@ -614,12 +641,27 @@ def freeze_optimization(paths: ProjectPaths, experiment_id: str) -> list[Evidenc
                 result.enumeration.status,
             )
         )
+        records.append(
+            record(
+                f"ev-{experiment_id}-optimization-enumeration-method",
+                "optimization.enumeration.method",
+                result.enumeration.method,
+            )
+        )
         if result.enumeration.optimum_value is not None:
             records.append(
                 record(
                     f"ev-{experiment_id}-optimization-enumeration-optimum",
                     "optimization.enumeration.optimum_value",
                     result.enumeration.optimum_value,
+                )
+            )
+        if result.enumeration.matches_solver_result is not None:
+            records.append(
+                record(
+                    f"ev-{experiment_id}-optimization-enumeration-matches",
+                    "optimization.enumeration.matches_solver_result",
+                    str(result.enumeration.matches_solver_result).lower(),
                 )
             )
         records.append(
@@ -662,6 +704,65 @@ def freeze_optimization(paths: ProjectPaths, experiment_id: str) -> list[Evidenc
         record(
             f"ev-{experiment_id}-optimization-time-limit",
             "optimization.time_limit_seconds",
+            spec.time_limit_seconds,
+        )
+    )
+
+    records.append(
+        record(
+            f"ev-{experiment_id}-experiment-instance-hash",
+            "experiment.instance_hash",
+            result.instance_hash or spec.instance_hash or "",
+        )
+    )
+    records.append(
+        record(
+            f"ev-{experiment_id}-experiment-mlflow-run-id",
+            "experiment.mlflow_run_id",
+            mlflow_run_id or "unavailable",
+        )
+    )
+    if experiment_record is not None:
+        records.append(
+            record(
+                f"ev-{experiment_id}-experiment-status",
+                "experiment.status",
+                experiment_record.status.value,
+            )
+        )
+        records.append(
+            record(
+                f"ev-{experiment_id}-experiment-git-commit",
+                "experiment.git_commit",
+                experiment_record.git_commit,
+            )
+        )
+        for linked_id in experiment_record.linked_experiment_ids:
+            records.append(
+                record(
+                    f"ev-{experiment_id}-experiment-linked-{linked_id}",
+                    "experiment.linked_experiment_id",
+                    linked_id,
+                )
+            )
+    records.append(
+        record(
+            f"ev-{experiment_id}-experiment-solver-backend",
+            "experiment.solver_backend",
+            result.solver_backend,
+        )
+    )
+    records.append(
+        record(
+            f"ev-{experiment_id}-experiment-solver-version",
+            "experiment.solver_version",
+            result.solver_version,
+        )
+    )
+    records.append(
+        record(
+            f"ev-{experiment_id}-experiment-time-limit",
+            "experiment.time_limit_seconds",
             spec.time_limit_seconds,
         )
     )
