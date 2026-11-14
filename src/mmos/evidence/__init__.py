@@ -1,4 +1,5 @@
 from mmos.evidence.benchmark_store import freeze_benchmark_suite
+from mmos.evidence.simulation_store import freeze_simulation
 from mmos.evidence.store import (
     REQUIRED_VALIDATORS,
     EvidenceError,
@@ -16,6 +17,7 @@ __all__ = [
     "freeze_benchmark_suite",
     "freeze_experiment",
     "freeze_optimization",
+    "freeze_simulation",
     "load_claims",
     "load_evidence_index",
 ]

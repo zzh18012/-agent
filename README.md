@@ -37,6 +37,7 @@ This repository is under phased construction. See `docs/progress/` for what is r
 | 15 | Scientific hardening: target/temporal metadata, rolling-origin validation, naive baselines, MASE, uncertainty | implemented; demo required revision before release |
 | 16 | EvaluationSet components, MASE fold semantics, information sets, practical equivalence | done; demo released with judge PASS |
 | 17 | Optimization slice: task-aware lifecycle, formal MILP experiments, tournament, frozen knapsack suite, lifecycle release closure | 17.1–17.2E done; suite_v1 released with judge PASS |
+| 18 | Simulation slice: SimPy M/M/1, replications/seeds, warm-up, time-weighting, analytic oracle, simulation auditor | 18.1 done; released with judge PASS as a descriptive discrepancy report |
 
 Nothing in the README should be read as a claim that later phases are implemented.
 

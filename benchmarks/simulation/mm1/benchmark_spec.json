@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "simulation_id": "mm1-benchmark-v1",
+  "experiment_id": "exp-mm1-benchmark-v1",
+  "model_family": "mm1",
+  "arrival_process": "poisson",
+  "service_process": "exponential",
+  "arrival_rate": 2.0,
+  "service_rate": 3.0,
+  "queue_discipline": "fifo",
+  "initial_state": "empty",
+  "simulation_time_units": "abstract_time_units",
+  "warmup_time": 500.0,
+  "measurement_time": 2000.0,
+  "replications": 30,
+  "master_seed": 20261113,
+  "seed_derivation": "sha256",
+  "metrics": ["W", "Wq", "L", "Lq", "utilization", "throughput"],
+  "analytic_validation": true,
+  "confidence_level": 0.95,
+  "analytic_relative_tolerance": 0.10,
+  "little_law_relative_tolerance": 0.15
+}

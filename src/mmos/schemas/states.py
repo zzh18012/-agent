@@ -11,7 +11,12 @@ class TaskFamily(StrEnum):
 
 
 SUPPORTED_TASKS = frozenset(
-    {TaskFamily.PREDICTION, TaskFamily.FORECASTING, TaskFamily.OPTIMIZATION}
+    {
+        TaskFamily.PREDICTION,
+        TaskFamily.FORECASTING,
+        TaskFamily.OPTIMIZATION,
+        TaskFamily.SIMULATION,
+    }
 )
 
 

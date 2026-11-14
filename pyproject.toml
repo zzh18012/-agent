@@ -21,6 +21,7 @@ dependencies = [
     "mlflow>=3.18.0",
     "matplotlib>=3.11.2",
     "ortools>=9.15.6755",
+    "simpy>=4.1.2",
 ]
 
 [dependency-groups]

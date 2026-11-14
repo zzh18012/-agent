@@ -90,6 +90,11 @@ from mmos.schemas.optimization import (
 from mmos.schemas.project import SourceRole
 from mmos.schemas.proposal import CritiqueReport
 from mmos.schemas.states import ESCAPE_STATES, SUPPORTED_TASKS, ProjectState, TaskFamily
+from mmos.simulation_pipeline import (
+    SimulationPipelineBlocked,
+    SimulationPipelineOptions,
+    run_simulation_pipeline,
+)
 from mmos.tracking import log_optimization_run, log_optimization_tournament
 from mmos.utils.logging import configure_logging
 from mmos.validation import validate_experiment
@@ -177,7 +182,10 @@ def init(
     name: Annotated[str, typer.Argument(help="Human-readable project name.")],
     task: Annotated[
         TaskFamily,
-        typer.Option("--task", help="Task family: prediction | forecasting | optimization."),
+        typer.Option(
+            "--task",
+            help="Task family: prediction | forecasting | optimization | simulation.",
+        ),
     ] = TaskFamily.PREDICTION,
     projects_dir: Annotated[
         Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
@@ -1340,6 +1348,53 @@ def optimize(
     console.print(f"Validation: {candidate_record.validation_status}")
     console.print(f"State: {load_project_config(paths).state.value}")
     console.print(f"Release: {release_md}")
+
+
+@app.command()
+def simulate(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    spec_file: Annotated[Path, typer.Argument(help="SimulationSpec JSON file.")],
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Run a formal stochastic simulation through the shared lifecycle."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    config = load_project_config(paths)
+    if config.task is not TaskFamily.SIMULATION:
+        console.print(
+            f"Error: simulation requires a simulation project; current task is "
+            f"{config.task.value}.",
+            style="red",
+        )
+        raise typer.Exit(code=1)
+
+    options = SimulationPipelineOptions(spec_file=spec_file)
+    try:
+        summary = run_simulation_pipeline(
+            paths,
+            options,
+            lambda ast, experiment_id: RedTeam(_model_or_exit()).run(
+                ast, experiment_id=experiment_id
+            ),
+        )
+    except SimulationPipelineBlocked as exc:
+        console.print(f"Simulation blocked: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+    except (ValueError, FileNotFoundError, EvidenceError, PaperError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"Simulation: {summary.simulation_id}")
+    console.print(f"Experiment: {summary.experiment_id}")
+    console.print(f"Spec hash: {summary.spec_hash}")
+    console.print(f"Replications: {summary.n_replications}")
+    console.print(f"Validation: {summary.validation}")
+    console.print(f"Claim: {summary.claim_id or 'none'}")
+    console.print(f"Red team: {summary.red_team_overall}")
+    console.print(f"Project state: {summary.state.value}")
+    console.print(f"Paper: {summary.paper_path}")
+    console.print(f"Release: {summary.release_path}")
 
 
 @app.command(name="benchmark-knapsack")

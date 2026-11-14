@@ -76,7 +76,7 @@ TERMINAL_STATES = frozenset({ProjectState.RELEASED})
 def task_transition_table(task: TaskFamily) -> dict[ProjectState, ProjectState]:
     if task in {TaskFamily.PREDICTION, TaskFamily.FORECASTING}:
         return NEXT_STATE
-    if task is TaskFamily.OPTIMIZATION:
+    if task in {TaskFamily.OPTIMIZATION, TaskFamily.SIMULATION}:
         return OPTIMIZATION_NEXT_STATE
     raise ValueError(f"task family {task.value!r} has no lifecycle yet")
 
@@ -84,7 +84,7 @@ def task_transition_table(task: TaskFamily) -> dict[ProjectState, ProjectState]:
 def task_order(task: TaskFamily) -> tuple[ProjectState, ...]:
     if task in {TaskFamily.PREDICTION, TaskFamily.FORECASTING}:
         return LINEAR_ORDER
-    if task is TaskFamily.OPTIMIZATION:
+    if task in {TaskFamily.OPTIMIZATION, TaskFamily.SIMULATION}:
         return OPTIMIZATION_ORDER
     raise ValueError(f"task family {task.value!r} has no lifecycle yet")
 

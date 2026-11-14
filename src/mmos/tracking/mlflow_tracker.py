@@ -15,6 +15,7 @@ from mmos.schemas.optimization import (
     relative_improvement,
 )
 from mmos.schemas.optimization_tournament import OptimizationTournamentResult
+from mmos.schemas.simulation import SimulationResult, SimulationSpec
 from mmos.schemas.tracking import MLflowRunRecord
 
 
@@ -170,6 +171,81 @@ def log_optimization_run(
         mlflow_record.model_dump_json(indent=2) + "\n",
     )
     return mlflow_record
+
+
+def log_simulation_run(
+    paths: ProjectPaths,
+    spec: SimulationSpec,
+    result: SimulationResult,
+) -> MLflowRunRecord:
+    """One formal MLflow run per simulation experiment, not per replication."""
+    uri = tracking_uri(paths)
+    mlflow.set_tracking_uri(uri)
+    client = MlflowClient(tracking_uri=uri)
+    experiment_id = _experiment_id(client, paths)
+
+    with mlflow.start_run(experiment_id=experiment_id, run_name=spec.experiment_id) as run:
+        mlflow.set_tags(
+            {
+                "project_id": paths.root.name,
+                "experiment_id": spec.experiment_id,
+                "simulation_id": spec.simulation_id,
+                "task_family": "simulation",
+                "model_family": spec.model_family,
+                "queue_discipline": spec.queue_discipline,
+                "spec_hash": spec.spec_hash,
+                "git_commit": result.git_commit,
+                "simpy_version": result.runtime.get("simpy_version", ""),
+            }
+        )
+        mlflow.log_params(
+            {
+                "arrival_rate": spec.arrival_rate,
+                "service_rate": spec.service_rate,
+                "rho": spec.rho,
+                "warmup_time": spec.warmup_time,
+                "measurement_time": spec.measurement_time,
+                "replications": spec.replications,
+                "master_seed": spec.master_seed,
+                "seed_derivation": spec.seed_derivation,
+                "confidence_level": spec.confidence_level,
+                "analytic_relative_tolerance": spec.analytic_relative_tolerance,
+                "little_law_relative_tolerance": spec.little_law_relative_tolerance,
+                "simulation_time_units": spec.simulation_time_units,
+            }
+        )
+        for metric, summary in result.metrics.items():
+            mlflow.log_metrics(
+                {
+                    f"mean_{metric}": summary.mean,
+                    f"std_{metric}": summary.std,
+                    f"ci_low_{metric}": summary.ci_low,
+                    f"ci_high_{metric}": summary.ci_high,
+                    f"ci_width_{metric}": summary.ci_width,
+                }
+            )
+        for metric, comparison in result.analytic_comparison.items():
+            mlflow.log_metric(f"relative_error_{metric}", comparison.relative_error)
+        for metric, check in result.little_law.items():
+            mlflow.log_metric(
+                f"little_law_{metric}_relative", check.relative_discrepancy
+            )
+
+        experiment_dir = paths.experiments_dir / spec.experiment_id
+        mlflow.log_artifacts(str(experiment_dir), artifact_path="experiment")
+        run_id = run.info.run_id
+
+    record = MLflowRunRecord(
+        run_id=run_id,
+        tracking_uri=uri,
+        experiment_name=paths.root.name,
+        logged_at=datetime.now(UTC).replace(microsecond=0),
+    )
+    atomic_write_text(
+        paths.experiments_dir / spec.experiment_id / "mlflow_run.json",
+        record.model_dump_json(indent=2) + "\n",
+    )
+    return record
 
 
 def log_optimization_tournament(

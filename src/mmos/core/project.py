@@ -20,6 +20,12 @@ from mmos.schemas.project import ProjectConfig, ProjectManifest
 from mmos.schemas.proposal import CouncilDecision, CritiqueReport, ModelProposal, ProposalList
 from mmos.schemas.research import ResearchResult
 from mmos.schemas.review import RedTeamReview
+from mmos.schemas.simulation import (
+    AnalyticOracle,
+    SimulationExperimentRecord,
+    SimulationResult,
+    SimulationSpec,
+)
 from mmos.schemas.states import TaskFamily
 from mmos.schemas.tournament import TournamentResult
 
@@ -307,6 +313,84 @@ def load_optimization_result(paths: ProjectPaths, experiment_id: str) -> Optimiz
     return OptimizationResult.model_validate_json(
         optimization_result_file(paths, experiment_id).read_text(encoding="utf-8")
     )
+
+
+def simulation_spec_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "simulation_spec.json"
+
+
+def save_simulation_spec(paths: ProjectPaths, spec: SimulationSpec) -> Path:
+    target = simulation_spec_file(paths, spec.experiment_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, spec.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_simulation_spec(paths: ProjectPaths, experiment_id: str) -> SimulationSpec:
+    return SimulationSpec.model_validate_json(
+        simulation_spec_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
+
+
+def simulation_result_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "artifacts" / "simulation_result.json"
+
+
+def save_simulation_result(paths: ProjectPaths, result: SimulationResult) -> Path:
+    target = simulation_result_file(paths, result.experiment_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, result.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_simulation_result(paths: ProjectPaths, experiment_id: str) -> SimulationResult:
+    return SimulationResult.model_validate_json(
+        simulation_result_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
+
+
+def analytic_oracle_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "artifacts" / "analytic_oracle.json"
+
+
+def save_analytic_oracle(
+    paths: ProjectPaths, experiment_id: str, oracle: AnalyticOracle
+) -> Path:
+    target = analytic_oracle_file(paths, experiment_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, oracle.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_analytic_oracle(paths: ProjectPaths, experiment_id: str) -> AnalyticOracle:
+    return AnalyticOracle.model_validate_json(
+        analytic_oracle_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
+
+
+def simulation_record_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "simulation_experiment_record.json"
+
+
+def save_simulation_record(
+    paths: ProjectPaths, record: SimulationExperimentRecord
+) -> Path:
+    target = simulation_record_file(paths, record.experiment_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, record.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_simulation_record(
+    paths: ProjectPaths, experiment_id: str
+) -> SimulationExperimentRecord:
+    return SimulationExperimentRecord.model_validate_json(
+        simulation_record_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
+
+
+def replications_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "artifacts" / "replications.csv"
 
 
 def experiment_record_file(paths: ProjectPaths, experiment_id: str) -> Path:
