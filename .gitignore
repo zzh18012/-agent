@@ -24,3 +24,6 @@ logs/
 scratch/
 projects/*
 !projects/.gitkeep
+
+# Generated routing benchmark artifacts
+routing_benchmark/runs/
