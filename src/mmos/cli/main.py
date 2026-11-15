@@ -1,3 +1,4 @@
+import hashlib
 import json
 import shutil
 import subprocess
@@ -90,6 +91,14 @@ from mmos.paper import PaperError, build_paper, render_paper
 from mmos.paper.optimization_builder import build_optimization_paper
 from mmos.pipeline import PipelineBlocked, PipelineOptions, run_pipeline
 from mmos.registries import ModelRegistry
+from mmos.routing import (
+    RoutingError,
+    RoutingInfrastructureError,
+    RoutingOutputError,
+    route_project,
+    route_text,
+)
+from mmos.routing.benchmark import RoutingBenchmarkError, run_routing_benchmark
 from mmos.schemas.data import DataSchema
 from mmos.schemas.experiment import ExperimentResult
 from mmos.schemas.optimization import (
@@ -1408,6 +1417,146 @@ def simulate(
     console.print(f"Project state: {summary.state.value}")
     console.print(f"Paper: {summary.paper_path}")
     console.print(f"Release: {summary.release_path}")
+
+
+@app.command()
+def route(
+    reference: Annotated[str, typer.Argument(help="Project id/directory or problem file.")],
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Classify a problem into TaskFamily routes without executing a model."""
+    model = _model_or_exit()
+    try:
+        try:
+            paths = resolve_project(reference, _projects_base(projects_dir))
+        except FileNotFoundError:
+            source = Path(reference)
+            if not source.is_file():
+                console.print(f"Error: not a project or problem file: {reference}", style="red")
+                raise typer.Exit(code=1) from None
+            problem_text = source.read_text(encoding="utf-8")
+            digest = hashlib.sha256(problem_text.encode()).hexdigest()[:8]
+            output_dir = Path("routing") / f"{source.stem}-{digest}"
+            outcome = route_text(problem_text, source.stem, model, output_dir)
+        else:
+            outcome = route_project(paths, model)
+    except RoutingInfrastructureError as exc:
+        console.print(f"Routing infrastructure error: {exc}", style="red")
+        raise typer.Exit(code=2) from exc
+    except RoutingOutputError as exc:
+        console.print(f"Routing output error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+    except RoutingError as exc:
+        console.print(f"Routing error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    decision = outcome.decision
+    table = Table(title=f"Routing {decision.routing_id}")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("Status", decision.status.value)
+    table.add_row("Primary task", decision.primary_task.value if decision.primary_task else "-")
+    table.add_row(
+        "Required tasks",
+        ", ".join(task.value for task in decision.required_task_families) or "-",
+    )
+    table.add_row("Execution", decision.execution_status.value)
+    table.add_row("Reason codes", ", ".join(decision.reason_codes) or "-")
+    table.add_row(
+        "Dependency hints",
+        ", ".join(
+            f"{hint.from_task.value}->{hint.to_task.value}"
+            for hint in decision.dependency_hints
+        )
+        or "-",
+    )
+    table.add_row(
+        "Clarifications", " | ".join(decision.clarifications_needed) or "-"
+    )
+    table.add_row(
+        "Unsupported", " | ".join(decision.unsupported_requirements) or "-"
+    )
+    table.add_row(
+        "Capabilities",
+        ", ".join(
+            f"{capability.task_family.value}:{capability.execution_readiness.value}"
+            for capability in decision.capabilities
+        )
+        or "-",
+    )
+    console.print(table)
+    for sub in decision.subproblem_routes:
+        console.print(
+            f"  {sub.subproblem_id}: "
+            f"{', '.join(task.value for task in sub.task_families) or 'no supported route'}"
+        )
+    if decision.suggested_command:
+        console.print(f"Suggested next command: {decision.suggested_command}")
+    console.print(f"Artifacts: {outcome.output_dir}")
+    if not outcome.audit.passed:
+        console.print("Routing audit FAILED.", style="red")
+        for issue in outcome.audit.issues:
+            console.print(f"  [{issue.code}] {issue.message}")
+        raise typer.Exit(code=1)
+    console.print("Routing audit passed.")
+
+
+@app.command(name="route-benchmark")
+def route_benchmark(
+    manifest: Annotated[Path, typer.Argument(help="Frozen routing manifest JSON.")],
+    output_dir: Annotated[
+        Path, typer.Option("--output-dir", help="Benchmark output directory.")
+    ] = Path("routing_benchmark/runs/latest"),
+    reuse_specs: Annotated[
+        bool,
+        typer.Option("--reuse-specs", help="Reuse cached ProblemSpecs in the output dir."),
+    ] = False,
+) -> None:
+    """Run the frozen routing benchmark twice with the configured LLM."""
+    try:
+        report = run_routing_benchmark(
+            manifest, _model_or_exit(), output_dir, reuse_specs=reuse_specs
+        )
+    except (RoutingBenchmarkError, RoutingError) as exc:
+        console.print(f"Routing benchmark failed: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    table = Table(title=f"Routing benchmark {report.suite_id}")
+    table.add_column("Metric")
+    table.add_column("Run 1", justify="right")
+    table.add_column("Run 2", justify="right")
+    for label, first, second in (
+        ("Status accuracy", report.run_1.status_accuracy, report.run_2.status_accuracy),
+        (
+            "Single-task accuracy",
+            report.run_1.single_task_accuracy,
+            report.run_2.single_task_accuracy,
+        ),
+        ("Multi-task recall", report.run_1.multi_task_recall, report.run_2.multi_task_recall),
+        (
+            "Ambiguous detection",
+            report.run_1.ambiguous_detection,
+            report.run_2.ambiguous_detection,
+        ),
+        (
+            "Unsupported detection",
+            report.run_1.unsupported_detection,
+            report.run_2.unsupported_detection,
+        ),
+    ):
+        table.add_row(label, f"{first:.3f}", f"{second:.3f}")
+    table.add_row(
+        "Critical unsafe",
+        str(report.run_1.critical_unsafe_count),
+        str(report.run_2.critical_unsafe_count),
+    )
+    table.add_row("Stability", f"{report.stability:.3f}", f"{report.stability:.3f}")
+    console.print(table)
+    for misroute in report.misroutes:
+        console.print(f"  misroute: {misroute}")
+    console.print(f"Report: {output_dir / 'routing_benchmark_report.json'}")
 
 
 @app.command(name="multi-optimize")

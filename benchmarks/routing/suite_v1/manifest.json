@@ -1,0 +1,250 @@
+{
+  "suite_id": "routing-suite-v1",
+  "version": "1.0.0",
+  "cases": [
+    {
+      "case_id": "ambiguous_1",
+      "problem": "Analyze this dataset and give the company the best plan.",
+      "problem_hash": "0db1b7a4459b56d0fae896c8441f26bb059e21f7505078a5a5c9ce2bb2992c31",
+      "expected_status": "AMBIGUOUS",
+      "expected_tasks": [],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "ambiguous_2",
+      "problem": "Build a mathematical model for the future of this business.",
+      "problem_hash": "bbc0c9059d9ad4e5dafcd4051081de568d250fc16206e6b911a0b1e5db88b29f",
+      "expected_status": "AMBIGUOUS",
+      "expected_tasks": [],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "forecast_1",
+      "problem": "Use a neural network to forecast next week's store demand from the historical daily sales time series. Validation must preserve chronological order and predict future dates.",
+      "problem_hash": "71f5d2a4eeb8a500ad729b53a838285ae9c446e31cc509a4546689821b4f28bc",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "forecasting"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "forecast_2",
+      "problem": "Forecast electricity load for each of the next 12 months from historical monthly observations, using rolling-origin validation.",
+      "problem_hash": "c3739f54bc90b15e2f23fc23ae76e27debf2d8729f862237c2af981719be23d2",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "forecasting"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "forecast_3",
+      "problem": "Predict future ICU admissions over the next 14 days from historical admission counts; time order matters.",
+      "problem_hash": "6d2fd2382634f070750674aec6d7641496372f4cb8b9eda754a058e0167cb0a4",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "forecasting"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "graph_1",
+      "problem": "Given a directed capacitated network with source s and sink t, compute the maximum s-t flow and verify it with the minimum cut.",
+      "problem_hash": "03d686f18c3dca923c68b35751a3474401858bc7f848067aca4a8e50e1ae1836",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "graph"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "graph_2",
+      "problem": "Find the shortest path from a source node to a destination in a weighted directed road network where graph topology is the core object.",
+      "problem_hash": "91ec8bd3accb37dfef674eb6cb0deffc5a37edbd81b87dbdc92bcf49a5461046",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "graph"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "graph_3",
+      "problem": "Find a maximum bipartite matching between workers and tasks in a graph of compatibility edges.",
+      "problem_hash": "628e87eb96159149c89409f48d358b2913c8c75d1ce1924aad7df0a56962db0d",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "graph"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "mixed_1",
+      "problem": "First forecast next quarter's product demand from historical time series with chronological validation. Then use those forecasts to choose production quantities under capacity constraints to maximize profit.",
+      "problem_hash": "5496c4e42f210f876e5f113eb353835a52fc9ec82aedb0d881e875a5056dc642",
+      "expected_status": "MULTI_TASK",
+      "expected_tasks": [
+        "forecasting",
+        "optimization"
+      ],
+      "expected_dependency_hints": [
+        "forecasting->optimization"
+      ]
+    },
+    {
+      "case_id": "mixed_2",
+      "problem": "Forecast future traffic demand on a road network, then compute maximum flow routing on that network under capacities.",
+      "problem_hash": "c83b387df8f19dc68976e47a8b77d175758d1c3e5b1817aca5ed25e7ea5bc47f",
+      "expected_status": "MULTI_TASK",
+      "expected_tasks": [
+        "forecasting",
+        "graph"
+      ],
+      "expected_dependency_hints": [
+        "forecasting->graph"
+      ]
+    },
+    {
+      "case_id": "mixed_3",
+      "problem": "Simulate a stochastic service system under multiple replications to estimate waiting-time distributions, then choose the number of servers to minimize cost subject to a waiting-time service constraint.",
+      "problem_hash": "b3acb8f3dce9c4b5672edbe0b1f3c1465b6a2c2381f7370fd7393369a8bf2cd8",
+      "expected_status": "MULTI_TASK",
+      "expected_tasks": [
+        "simulation",
+        "optimization"
+      ],
+      "expected_dependency_hints": [
+        "simulation->optimization"
+      ]
+    },
+    {
+      "case_id": "multiobjective_1",
+      "problem": "Select a portfolio of assets to maximize expected return and minimize risk. No weights or preference between the two objectives are given; keep both as trade-offs.",
+      "problem_hash": "d2a265bef304943753ad9b35cfc058497cd8802f1712eef2065833c68f6b79b1",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "multi_objective"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "multiobjective_2",
+      "problem": "Choose facility locations to maximize population coverage and minimize construction cost. No preference weights are given; both objectives must be traded off.",
+      "problem_hash": "02f8e002b4a35b79b44535da25c0af4331654755758dbd9dd86e555c811b0ba6",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "multi_objective"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "multiobjective_3",
+      "problem": "Select suppliers to maximize quality score and minimize expected delay, with a procurement budget constraint. No preference between quality and delay is provided.",
+      "problem_hash": "7047fe298828611957b0a8b0ac1219440fb040ef11396ec8cb6fbb1f64a03bbb",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "multi_objective"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "optimization_1",
+      "problem": "Select production quantities for products subject to machine-hour and material constraints to maximize total profit. One objective.",
+      "problem_hash": "4fd7a8f282aa9430a3a08ac917b46826f9b18a4ae094345d3709a4b3924f313a",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "optimization"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "optimization_2",
+      "problem": "Choose a subset of projects with costs under a budget to maximize total expected profit. Single-objective 0/1 knapsack.",
+      "problem_hash": "72e984fcc994cd8370aeb8d59a6f76ef944e1d545e9d250febd9c56b6e9f5d45",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "optimization"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "optimization_3",
+      "problem": "Assign nurses to shifts under labor rules and demand coverage to minimize total staffing cost. One objective and hard constraints.",
+      "problem_hash": "3863e4a6bd52ef81197506605501ae3216b155215cba3d9d7747fcbd88c76bad",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "optimization"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "prediction_1",
+      "problem": "A real-estate dataset contains current property features (area, rooms, age, location) and historical sale prices. Build a model to predict the sale price of a property from its current features. Evaluate with RMSE, MAE, and R-squared. There is no future-time forecasting requirement.",
+      "problem_hash": "618bd217aee894c0e92fc5514665813206e52b717025c30b7508e39c0328484f",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "prediction"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "prediction_2",
+      "problem": "Using current account attributes (tenure, monthly charges, contract type), predict whether a customer will churn. Report accuracy, precision, recall, and F1.",
+      "problem_hash": "4833dba8a3878c23061d87652ad3f657eb2a797523e34e5fad6df58ffed8f383",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "prediction"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "prediction_3",
+      "problem": "Historical simulation data contain sensor readings and failure labels. Predict the probability that a machine will fail from its current readings; this is not a stochastic process simulation.",
+      "problem_hash": "699a8f2ab2d01c1ad05f37ef6ddfbbd75e1a888f90c15446223aaac6ebea8d84",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "prediction"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "simulation_1",
+      "problem": "Model a single-server queue with random Poisson arrivals and random service times. Run multiple independent replications with warm-up and measure steady-state waiting time and queue length distributions.",
+      "problem_hash": "62b241042c6598e2f5cc4ef027e9ac08828aa41071aae700116e314fe573319a",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "simulation"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "simulation_2",
+      "problem": "Simulate a stochastic inventory system with random daily demand and lead times over many independent replications; report the distribution of stockouts and average inventory.",
+      "problem_hash": "ac0873fadbd300e98f08cfe62f88f835a9f391bec9aa363fa0666fca3a5857c4",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "simulation"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "simulation_3",
+      "problem": "Build a discrete-event simulation of a bank teller system with random arrivals and service, including warm-up and confidence intervals over replications.",
+      "problem_hash": "fefafa7c9f77496354cbef7ba39b814370d4e6211aef4adfff7af63da7b9ca36",
+      "expected_status": "SINGLE_TASK",
+      "expected_tasks": [
+        "simulation"
+      ],
+      "expected_dependency_hints": []
+    },
+    {
+      "case_id": "unsupported_1",
+      "problem": "Design and train a deep reinforcement learning policy for autonomous robot locomotion from raw pixels, including policy optimization and exploration.",
+      "problem_hash": "2fa0b44ad2b5383dd30dde13e3903545ec1392710f935e44ce2a7706b47f89a8",
+      "expected_status": "UNSUPPORTED",
+      "expected_tasks": [],
+      "expected_dependency_hints": []
+    }
+  ],
+  "manifest_hash": "63cd847101c7c736a084b4d943b4ce59ce1715cd436870e1451a0732ac40beae"
+}

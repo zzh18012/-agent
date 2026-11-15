@@ -1,0 +1,1021 @@
+{
+  "suite_id": "routing-suite-v1",
+  "manifest_hash": "63cd847101c7c736a084b4d943b4ce59ce1715cd436870e1451a0732ac40beae",
+  "run_1": {
+    "run": 1,
+    "cases": [
+      {
+        "case_id": "ambiguous_1",
+        "run": 1,
+        "expected_status": "AMBIGUOUS",
+        "expected_tasks": [],
+        "expected_dependency_hints": [],
+        "predicted_status": "AMBIGUOUS",
+        "predicted_primary": null,
+        "predicted_tasks": [],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": false,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "AMBIGUOUS|-"
+      },
+      {
+        "case_id": "ambiguous_2",
+        "run": 1,
+        "expected_status": "AMBIGUOUS",
+        "expected_tasks": [],
+        "expected_dependency_hints": [],
+        "predicted_status": "AMBIGUOUS",
+        "predicted_primary": null,
+        "predicted_tasks": [],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": false,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "AMBIGUOUS|-"
+      },
+      {
+        "case_id": "forecast_1",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "forecasting"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "forecasting",
+        "predicted_tasks": [
+          "forecasting"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|forecasting"
+      },
+      {
+        "case_id": "forecast_2",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "forecasting"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "forecasting",
+        "predicted_tasks": [
+          "forecasting"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|forecasting"
+      },
+      {
+        "case_id": "forecast_3",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "forecasting"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "forecasting",
+        "predicted_tasks": [
+          "forecasting"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|forecasting"
+      },
+      {
+        "case_id": "graph_1",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "graph"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "graph",
+        "predicted_tasks": [
+          "graph"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|graph"
+      },
+      {
+        "case_id": "graph_2",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "graph"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "graph",
+        "predicted_tasks": [
+          "graph"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|graph"
+      },
+      {
+        "case_id": "graph_3",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "graph"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "graph",
+        "predicted_tasks": [
+          "graph"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|graph"
+      },
+      {
+        "case_id": "mixed_1",
+        "run": 1,
+        "expected_status": "MULTI_TASK",
+        "expected_tasks": [
+          "forecasting",
+          "optimization"
+        ],
+        "expected_dependency_hints": [
+          "forecasting->optimization"
+        ],
+        "predicted_status": "MULTI_TASK",
+        "predicted_primary": null,
+        "predicted_tasks": [
+          "forecasting",
+          "optimization"
+        ],
+        "predicted_dependency_hints": [
+          "forecasting->optimization"
+        ],
+        "status_correct": true,
+        "single_task_exact": false,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "MULTI_TASK|forecasting,optimization"
+      },
+      {
+        "case_id": "mixed_2",
+        "run": 1,
+        "expected_status": "MULTI_TASK",
+        "expected_tasks": [
+          "forecasting",
+          "graph"
+        ],
+        "expected_dependency_hints": [
+          "forecasting->graph"
+        ],
+        "predicted_status": "MULTI_TASK",
+        "predicted_primary": null,
+        "predicted_tasks": [
+          "forecasting",
+          "graph"
+        ],
+        "predicted_dependency_hints": [
+          "forecasting->graph"
+        ],
+        "status_correct": true,
+        "single_task_exact": false,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "MULTI_TASK|forecasting,graph"
+      },
+      {
+        "case_id": "mixed_3",
+        "run": 1,
+        "expected_status": "MULTI_TASK",
+        "expected_tasks": [
+          "simulation",
+          "optimization"
+        ],
+        "expected_dependency_hints": [
+          "simulation->optimization"
+        ],
+        "predicted_status": "MULTI_TASK",
+        "predicted_primary": null,
+        "predicted_tasks": [
+          "simulation",
+          "optimization"
+        ],
+        "predicted_dependency_hints": [
+          "simulation->optimization"
+        ],
+        "status_correct": true,
+        "single_task_exact": false,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "MULTI_TASK|simulation,optimization"
+      },
+      {
+        "case_id": "multiobjective_1",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "multi_objective"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "multi_objective",
+        "predicted_tasks": [
+          "multi_objective"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|multi_objective"
+      },
+      {
+        "case_id": "multiobjective_2",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "multi_objective"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "multi_objective",
+        "predicted_tasks": [
+          "multi_objective"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|multi_objective"
+      },
+      {
+        "case_id": "multiobjective_3",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "multi_objective"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "multi_objective",
+        "predicted_tasks": [
+          "multi_objective"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|multi_objective"
+      },
+      {
+        "case_id": "optimization_1",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "optimization"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "optimization",
+        "predicted_tasks": [
+          "optimization"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|optimization"
+      },
+      {
+        "case_id": "optimization_2",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "optimization"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "optimization",
+        "predicted_tasks": [
+          "optimization"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|optimization"
+      },
+      {
+        "case_id": "optimization_3",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "optimization"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "optimization",
+        "predicted_tasks": [
+          "optimization"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|optimization"
+      },
+      {
+        "case_id": "prediction_1",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "prediction"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "prediction",
+        "predicted_tasks": [
+          "prediction"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|prediction"
+      },
+      {
+        "case_id": "prediction_2",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "prediction"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "prediction",
+        "predicted_tasks": [
+          "prediction"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|prediction"
+      },
+      {
+        "case_id": "prediction_3",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "prediction"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "prediction",
+        "predicted_tasks": [
+          "prediction"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|prediction"
+      },
+      {
+        "case_id": "simulation_1",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "simulation"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "simulation",
+        "predicted_tasks": [
+          "simulation"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|simulation"
+      },
+      {
+        "case_id": "simulation_2",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "simulation"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "simulation",
+        "predicted_tasks": [
+          "simulation"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|simulation"
+      },
+      {
+        "case_id": "simulation_3",
+        "run": 1,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "simulation"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "simulation",
+        "predicted_tasks": [
+          "simulation"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|simulation"
+      },
+      {
+        "case_id": "unsupported_1",
+        "run": 1,
+        "expected_status": "UNSUPPORTED",
+        "expected_tasks": [],
+        "expected_dependency_hints": [],
+        "predicted_status": "UNSUPPORTED",
+        "predicted_primary": null,
+        "predicted_tasks": [],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": false,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "UNSUPPORTED|-"
+      }
+    ],
+    "status_accuracy": 1.0,
+    "single_task_accuracy": 1.0,
+    "multi_task_recall": 1.0,
+    "ambiguous_detection": 1.0,
+    "unsupported_detection": 1.0,
+    "critical_unsafe_count": 0
+  },
+  "run_2": {
+    "run": 2,
+    "cases": [
+      {
+        "case_id": "ambiguous_1",
+        "run": 2,
+        "expected_status": "AMBIGUOUS",
+        "expected_tasks": [],
+        "expected_dependency_hints": [],
+        "predicted_status": "AMBIGUOUS",
+        "predicted_primary": null,
+        "predicted_tasks": [],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": false,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "AMBIGUOUS|-"
+      },
+      {
+        "case_id": "ambiguous_2",
+        "run": 2,
+        "expected_status": "AMBIGUOUS",
+        "expected_tasks": [],
+        "expected_dependency_hints": [],
+        "predicted_status": "AMBIGUOUS",
+        "predicted_primary": null,
+        "predicted_tasks": [],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": false,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "AMBIGUOUS|-"
+      },
+      {
+        "case_id": "forecast_1",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "forecasting"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "forecasting",
+        "predicted_tasks": [
+          "forecasting"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|forecasting"
+      },
+      {
+        "case_id": "forecast_2",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "forecasting"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "forecasting",
+        "predicted_tasks": [
+          "forecasting"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|forecasting"
+      },
+      {
+        "case_id": "forecast_3",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "forecasting"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "forecasting",
+        "predicted_tasks": [
+          "forecasting"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|forecasting"
+      },
+      {
+        "case_id": "graph_1",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "graph"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "graph",
+        "predicted_tasks": [
+          "graph"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|graph"
+      },
+      {
+        "case_id": "graph_2",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "graph"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "graph",
+        "predicted_tasks": [
+          "graph"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|graph"
+      },
+      {
+        "case_id": "graph_3",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "graph"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "graph",
+        "predicted_tasks": [
+          "graph"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|graph"
+      },
+      {
+        "case_id": "mixed_1",
+        "run": 2,
+        "expected_status": "MULTI_TASK",
+        "expected_tasks": [
+          "forecasting",
+          "optimization"
+        ],
+        "expected_dependency_hints": [
+          "forecasting->optimization"
+        ],
+        "predicted_status": "MULTI_TASK",
+        "predicted_primary": null,
+        "predicted_tasks": [
+          "forecasting",
+          "optimization"
+        ],
+        "predicted_dependency_hints": [
+          "forecasting->optimization"
+        ],
+        "status_correct": true,
+        "single_task_exact": false,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "MULTI_TASK|forecasting,optimization"
+      },
+      {
+        "case_id": "mixed_2",
+        "run": 2,
+        "expected_status": "MULTI_TASK",
+        "expected_tasks": [
+          "forecasting",
+          "graph"
+        ],
+        "expected_dependency_hints": [
+          "forecasting->graph"
+        ],
+        "predicted_status": "MULTI_TASK",
+        "predicted_primary": null,
+        "predicted_tasks": [
+          "forecasting",
+          "graph"
+        ],
+        "predicted_dependency_hints": [
+          "forecasting->graph"
+        ],
+        "status_correct": true,
+        "single_task_exact": false,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "MULTI_TASK|forecasting,graph"
+      },
+      {
+        "case_id": "mixed_3",
+        "run": 2,
+        "expected_status": "MULTI_TASK",
+        "expected_tasks": [
+          "simulation",
+          "optimization"
+        ],
+        "expected_dependency_hints": [
+          "simulation->optimization"
+        ],
+        "predicted_status": "MULTI_TASK",
+        "predicted_primary": null,
+        "predicted_tasks": [
+          "simulation",
+          "optimization"
+        ],
+        "predicted_dependency_hints": [
+          "simulation->optimization"
+        ],
+        "status_correct": true,
+        "single_task_exact": false,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "MULTI_TASK|simulation,optimization"
+      },
+      {
+        "case_id": "multiobjective_1",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "multi_objective"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "multi_objective",
+        "predicted_tasks": [
+          "multi_objective"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|multi_objective"
+      },
+      {
+        "case_id": "multiobjective_2",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "multi_objective"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "multi_objective",
+        "predicted_tasks": [
+          "multi_objective"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|multi_objective"
+      },
+      {
+        "case_id": "multiobjective_3",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "multi_objective"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "multi_objective",
+        "predicted_tasks": [
+          "multi_objective"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|multi_objective"
+      },
+      {
+        "case_id": "optimization_1",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "optimization"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "optimization",
+        "predicted_tasks": [
+          "optimization"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|optimization"
+      },
+      {
+        "case_id": "optimization_2",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "optimization"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "optimization",
+        "predicted_tasks": [
+          "optimization"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|optimization"
+      },
+      {
+        "case_id": "optimization_3",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "optimization"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "optimization",
+        "predicted_tasks": [
+          "optimization"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|optimization"
+      },
+      {
+        "case_id": "prediction_1",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "prediction"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "prediction",
+        "predicted_tasks": [
+          "prediction"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|prediction"
+      },
+      {
+        "case_id": "prediction_2",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "prediction"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "prediction",
+        "predicted_tasks": [
+          "prediction"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|prediction"
+      },
+      {
+        "case_id": "prediction_3",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "prediction"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "prediction",
+        "predicted_tasks": [
+          "prediction"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|prediction"
+      },
+      {
+        "case_id": "simulation_1",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "simulation"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "simulation",
+        "predicted_tasks": [
+          "simulation"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|simulation"
+      },
+      {
+        "case_id": "simulation_2",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "simulation"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "simulation",
+        "predicted_tasks": [
+          "simulation"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|simulation"
+      },
+      {
+        "case_id": "simulation_3",
+        "run": 2,
+        "expected_status": "SINGLE_TASK",
+        "expected_tasks": [
+          "simulation"
+        ],
+        "expected_dependency_hints": [],
+        "predicted_status": "SINGLE_TASK",
+        "predicted_primary": "simulation",
+        "predicted_tasks": [
+          "simulation"
+        ],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": true,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "SINGLE_TASK|simulation"
+      },
+      {
+        "case_id": "unsupported_1",
+        "run": 2,
+        "expected_status": "UNSUPPORTED",
+        "expected_tasks": [],
+        "expected_dependency_hints": [],
+        "predicted_status": "UNSUPPORTED",
+        "predicted_primary": null,
+        "predicted_tasks": [],
+        "predicted_dependency_hints": [],
+        "status_correct": true,
+        "single_task_exact": false,
+        "critical_unsafe": false,
+        "audit_passed": true,
+        "predicted_route": "UNSUPPORTED|-"
+      }
+    ],
+    "status_accuracy": 1.0,
+    "single_task_accuracy": 1.0,
+    "multi_task_recall": 1.0,
+    "ambiguous_detection": 1.0,
+    "unsupported_detection": 1.0,
+    "critical_unsafe_count": 0
+  },
+  "stability": 1.0,
+  "confusion_matrix": {
+    "AMBIGUOUS": {
+      "AMBIGUOUS": 2
+    },
+    "SINGLE_TASK": {
+      "SINGLE_TASK": 18
+    },
+    "MULTI_TASK": {
+      "MULTI_TASK": 3
+    },
+    "UNSUPPORTED": {
+      "UNSUPPORTED": 1
+    }
+  },
+  "misroutes": [],
+  "critical_unsafe_count": 0,
+  "limitations": [
+    "ProblemSpec is analyzed once per case and reused across the two signal/routing runs; the runs are independent at the signal and routing layers.",
+    "Gold routes are frozen; no gold label or case id is shown to the LLM.",
+    "The benchmark contains 24 synthetic routing cases, not a general taxonomy."
+  ],
+  "created_at": "2026-11-15T13:13:59Z"
+}

@@ -40,6 +40,7 @@ This repository is under phased construction. See `docs/progress/` for what is r
 | 18 | Simulation slice: SimPy M/M/1, replications/seeds, warm-up, time-weighting, analytic oracle, simulation auditor | 18.1 done; released with judge PASS as a descriptive discrepancy report |
 | 19 | Graph slice: directed max-flow, flow auditor, independent cut enumeration, graph evidence/paper lifecycle | 19.1 done; released with judge PASS as an internal plumbing test note |
 | 20 | Multi-objective slice: bi-objective portfolio, epsilon-constraint, independent Pareto oracle, no unique winner | 20.1 done; released with judge PASS as a scoped Pareto conformance report |
+| 21 | Automatic Problem Router: structured signals, deterministic TaskFamily policy, capability reports, frozen routing benchmark | 21.1 done; 24/24 twice, stability 1.0, critical unsafe 0 |
 
 Nothing in the README should be read as a claim that later phases are implemented.
 

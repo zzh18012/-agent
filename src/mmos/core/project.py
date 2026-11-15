@@ -175,6 +175,10 @@ class ProjectPaths:
     def log_dir(self) -> Path:
         return self.root / "logs"
 
+    @property
+    def routing_dir(self) -> Path:
+        return self.root / "routing"
+
 
 def current_git_commit() -> str:
     try:
