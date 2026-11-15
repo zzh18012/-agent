@@ -80,6 +80,11 @@ from mmos.graph_pipeline import (
     GraphPipelineOptions,
     run_graph_pipeline,
 )
+from mmos.multi_objective_pipeline import (
+    MultiObjectivePipelineBlocked,
+    MultiObjectivePipelineOptions,
+    run_multi_objective_pipeline,
+)
 from mmos.orchestration import Orchestrator
 from mmos.paper import PaperError, build_paper, render_paper
 from mmos.paper.optimization_builder import build_optimization_paper
@@ -190,7 +195,8 @@ def init(
         typer.Option(
             "--task",
             help=(
-                "Task family: prediction | forecasting | optimization | simulation | graph."
+                "Task family: prediction | forecasting | optimization | simulation | "
+                "graph | multi_objective."
             ),
         ),
     ] = TaskFamily.PREDICTION,
@@ -1400,6 +1406,60 @@ def simulate(
     console.print(f"Claim: {summary.claim_id or 'none'}")
     console.print(f"Red team: {summary.red_team_overall}")
     console.print(f"Project state: {summary.state.value}")
+    console.print(f"Paper: {summary.paper_path}")
+    console.print(f"Release: {summary.release_path}")
+
+
+@app.command(name="multi-optimize")
+def multi_optimize(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    spec_file: Annotated[Path, typer.Argument(help="MultiObjectiveSpec JSON file.")],
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Run a formal multi-objective Pareto experiment through the shared lifecycle."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    config = load_project_config(paths)
+    if config.task is not TaskFamily.MULTI_OBJECTIVE:
+        console.print(
+            "Error: multi-optimize requires a multi_objective project; current task is "
+            f"{config.task.value}.",
+            style="red",
+        )
+        raise typer.Exit(code=1)
+
+    options = MultiObjectivePipelineOptions(spec_file=spec_file)
+    try:
+        summary = run_multi_objective_pipeline(
+            paths,
+            options,
+            lambda ast, experiment_id: RedTeam(_model_or_exit()).run(
+                ast, experiment_id=experiment_id
+            ),
+        )
+    except MultiObjectivePipelineBlocked as exc:
+        console.print(f"Multi-objective blocked: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+    except (ValueError, FileNotFoundError, EvidenceError, PaperError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"Experiment: {summary.experiment_id}")
+    console.print(f"Instance hash: {summary.instance_hash}")
+    console.print(
+        f"Pareto front: candidate {summary.candidate_front_size}, oracle "
+        f"{summary.oracle_front_size}"
+    )
+    console.print(
+        f"Precision {summary.precision:.6f}; recall {summary.recall:.6f}; exact "
+        f"match {summary.exact_match}"
+    )
+    console.print(f"Validation: {summary.validation}")
+    console.print(f"Claim: {summary.claim_id or 'none'}")
+    console.print(f"Red team: {summary.red_team_overall}")
+    console.print(f"Project state: {summary.state.value}")
+    console.print("No unique winner: the result is a Pareto set of alternatives.")
     console.print(f"Paper: {summary.paper_path}")
     console.print(f"Release: {summary.release_path}")
 

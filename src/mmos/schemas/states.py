@@ -17,6 +17,7 @@ SUPPORTED_TASKS = frozenset(
         TaskFamily.OPTIMIZATION,
         TaskFamily.SIMULATION,
         TaskFamily.GRAPH,
+        TaskFamily.MULTI_OBJECTIVE,
     }
 )
 

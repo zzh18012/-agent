@@ -9,6 +9,11 @@ from mmos.core.project import ProjectPaths, atomic_write_text
 from mmos.schemas.benchmark import BenchmarkSuiteResult
 from mmos.schemas.experiment import ExperimentResult, ExperimentSpec
 from mmos.schemas.graph import GraphProblemSpec, GraphResult, MinCutOracle
+from mmos.schemas.multi_objective import (
+    MultiObjectiveResult,
+    MultiObjectiveSpec,
+    ParetoOracle,
+)
 from mmos.schemas.optimization import (
     OptimizationExperimentRecord,
     OptimizationResult,
@@ -172,6 +177,80 @@ def log_optimization_run(
         mlflow_record.model_dump_json(indent=2) + "\n",
     )
     return mlflow_record
+
+
+def log_multi_objective_run(
+    paths: ProjectPaths,
+    spec: MultiObjectiveSpec,
+    result: MultiObjectiveResult,
+    oracle: ParetoOracle,
+) -> MLflowRunRecord:
+    """One formal MLflow run per multi-objective experiment, not per epsilon level."""
+    uri = tracking_uri(paths)
+    mlflow.set_tracking_uri(uri)
+    client = MlflowClient(tracking_uri=uri)
+    experiment_id = _experiment_id(client, paths)
+    comparison = result.comparison
+
+    with mlflow.start_run(experiment_id=experiment_id, run_name=spec.experiment_id) as run:
+        mlflow.set_tags(
+            {
+                "project_id": paths.root.name,
+                "experiment_id": spec.experiment_id,
+                "task_family": "multi_objective",
+                "method": spec.method,
+                "solver": spec.solver,
+                "objectives": ",".join(
+                    objective.objective_id for objective in spec.objectives
+                ),
+                "instance_hash": spec.instance_hash,
+                "spec_hash": spec.spec_hash,
+                "git_commit": result.git_commit,
+            }
+        )
+        mlflow.log_params(
+            {
+                "n_projects": len(spec.items),
+                "budget": spec.budget,
+                "objective_count": len(spec.objectives),
+                "method": spec.method,
+                "solver": spec.solver,
+                "epsilon_step": spec.epsilon_step,
+                "epsilon_min": result.epsilon_coverage.epsilon_min,
+                "epsilon_max": result.epsilon_coverage.epsilon_max,
+                "epsilon_count": result.epsilon_coverage.epsilon_count,
+                "reference_point": json.dumps(spec.reference_point),
+                "solver_time_limit_seconds": spec.solver_time_limit_seconds,
+            }
+        )
+        mlflow.log_metrics(
+            {
+                "candidate_front_size": result.candidate_front_size,
+                "oracle_front_size": oracle.front_size,
+                "front_precision": comparison.precision if comparison else 0.0,
+                "front_recall": comparison.recall if comparison else 0.0,
+                "hypervolume": result.hypervolume,
+                "hypervolume_oracle": oracle.hypervolume,
+                "hypervolume_gap": result.hypervolume_gap or 0.0,
+                "solver_calls": result.solver_calls,
+                "runtime_seconds": result.runtime_total,
+            }
+        )
+        experiment_dir = paths.experiments_dir / spec.experiment_id
+        mlflow.log_artifacts(str(experiment_dir), artifact_path="experiment")
+        run_id = run.info.run_id
+
+    record = MLflowRunRecord(
+        run_id=run_id,
+        tracking_uri=uri,
+        experiment_name=paths.root.name,
+        logged_at=datetime.now(UTC).replace(microsecond=0),
+    )
+    atomic_write_text(
+        paths.experiments_dir / spec.experiment_id / "mlflow_run.json",
+        record.model_dump_json(indent=2) + "\n",
+    )
+    return record
 
 
 def log_graph_run(

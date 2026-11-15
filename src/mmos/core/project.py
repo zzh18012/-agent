@@ -16,6 +16,12 @@ from mmos.schemas.graph import (
     GraphResult,
     MinCutOracle,
 )
+from mmos.schemas.multi_objective import (
+    MultiObjectiveExperimentRecord,
+    MultiObjectiveResult,
+    MultiObjectiveSpec,
+    ParetoOracle,
+)
 from mmos.schemas.optimization import (
     OptimizationExperimentRecord,
     OptimizationResult,
@@ -492,6 +498,94 @@ def load_graph_record(
 ) -> GraphExperimentRecord:
     return GraphExperimentRecord.model_validate_json(
         graph_record_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
+
+
+def multi_objective_spec_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "multi_objective_spec.json"
+
+
+def save_multi_objective_spec(paths: ProjectPaths, spec: MultiObjectiveSpec) -> Path:
+    target = multi_objective_spec_file(paths, spec.experiment_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, spec.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_multi_objective_spec(
+    paths: ProjectPaths, experiment_id: str
+) -> MultiObjectiveSpec:
+    return MultiObjectiveSpec.model_validate_json(
+        multi_objective_spec_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
+
+
+def multi_objective_result_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return (
+        paths.experiment_dir(experiment_id)
+        / "artifacts"
+        / "multi_objective_result.json"
+    )
+
+
+def save_multi_objective_result(
+    paths: ProjectPaths, result: MultiObjectiveResult
+) -> Path:
+    target = multi_objective_result_file(paths, result.experiment_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, result.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_multi_objective_result(
+    paths: ProjectPaths, experiment_id: str
+) -> MultiObjectiveResult:
+    return MultiObjectiveResult.model_validate_json(
+        multi_objective_result_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
+
+
+def pareto_oracle_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "artifacts" / "pareto_oracle.json"
+
+
+def save_pareto_oracle(
+    paths: ProjectPaths, experiment_id: str, oracle: ParetoOracle
+) -> Path:
+    target = pareto_oracle_file(paths, experiment_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, oracle.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_pareto_oracle(paths: ProjectPaths, experiment_id: str) -> ParetoOracle:
+    return ParetoOracle.model_validate_json(
+        pareto_oracle_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
+
+
+def epsilon_solutions_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "artifacts" / "epsilon_solutions.csv"
+
+
+def multi_objective_record_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "multi_objective_experiment_record.json"
+
+
+def save_multi_objective_record(
+    paths: ProjectPaths, record: MultiObjectiveExperimentRecord
+) -> Path:
+    target = multi_objective_record_file(paths, record.experiment_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, record.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_multi_objective_record(
+    paths: ProjectPaths, experiment_id: str
+) -> MultiObjectiveExperimentRecord:
+    return MultiObjectiveExperimentRecord.model_validate_json(
+        multi_objective_record_file(paths, experiment_id).read_text(encoding="utf-8")
     )
 
 

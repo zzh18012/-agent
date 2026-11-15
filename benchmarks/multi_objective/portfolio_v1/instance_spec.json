@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "problem_id": "portfolio-benchmark-v1",
+  "experiment_id": "exp-portfolio-benchmark-v1",
+  "items": [
+    {"project_id": "p1", "cost": 3, "benefits": {"A": 10, "B": 1}},
+    {"project_id": "p2", "cost": 3, "benefits": {"A": 1, "B": 10}},
+    {"project_id": "p3", "cost": 4, "benefits": {"A": 8, "B": 3}},
+    {"project_id": "p4", "cost": 4, "benefits": {"A": 3, "B": 8}},
+    {"project_id": "p5", "cost": 5, "benefits": {"A": 9, "B": 2}},
+    {"project_id": "p6", "cost": 5, "benefits": {"A": 2, "B": 9}},
+    {"project_id": "p7", "cost": 6, "benefits": {"A": 7, "B": 4}},
+    {"project_id": "p8", "cost": 6, "benefits": {"A": 4, "B": 7}},
+    {"project_id": "p9", "cost": 2, "benefits": {"A": 5, "B": 5}},
+    {"project_id": "p10", "cost": 2, "benefits": {"A": 6, "B": 4}}
+  ],
+  "budget": 12,
+  "objectives": [
+    {"objective_id": "A", "sense": "maximize", "definition": "total benefit A"},
+    {"objective_id": "B", "sense": "maximize", "definition": "total benefit B"}
+  ],
+  "method": "epsilon_constraint",
+  "solver": "ortools.cbc",
+  "solver_time_limit_seconds": 5.0,
+  "epsilon_policy": "full_integer_range",
+  "epsilon_step": 1,
+  "reference_point": [0, 0]
+}
