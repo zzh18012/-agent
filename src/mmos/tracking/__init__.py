@@ -1,6 +1,7 @@
 from mmos.tracking.mlflow_tracker import (
     log_benchmark_suite,
     log_experiment_run,
+    log_graph_run,
     log_optimization_run,
     log_optimization_tournament,
     log_simulation_run,
@@ -10,6 +11,7 @@ from mmos.tracking.mlflow_tracker import (
 __all__ = [
     "log_benchmark_suite",
     "log_experiment_run",
+    "log_graph_run",
     "log_optimization_run",
     "log_optimization_tournament",
     "log_simulation_run",

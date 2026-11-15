@@ -8,6 +8,7 @@ from mlflow.tracking import MlflowClient
 from mmos.core.project import ProjectPaths, atomic_write_text
 from mmos.schemas.benchmark import BenchmarkSuiteResult
 from mmos.schemas.experiment import ExperimentResult, ExperimentSpec
+from mmos.schemas.graph import GraphProblemSpec, GraphResult, MinCutOracle
 from mmos.schemas.optimization import (
     OptimizationExperimentRecord,
     OptimizationResult,
@@ -171,6 +172,74 @@ def log_optimization_run(
         mlflow_record.model_dump_json(indent=2) + "\n",
     )
     return mlflow_record
+
+
+def log_graph_run(
+    paths: ProjectPaths,
+    spec: GraphProblemSpec,
+    result: GraphResult,
+    oracle: MinCutOracle,
+) -> MLflowRunRecord:
+    """One formal MLflow run per graph experiment."""
+    uri = tracking_uri(paths)
+    mlflow.set_tracking_uri(uri)
+    client = MlflowClient(tracking_uri=uri)
+    experiment_id = _experiment_id(client, paths)
+    gap = abs(result.max_flow_value - oracle.minimum_cut_capacity)
+
+    with mlflow.start_run(experiment_id=experiment_id, run_name=spec.experiment_id) as run:
+        mlflow.set_tags(
+            {
+                "project_id": paths.root.name,
+                "experiment_id": spec.experiment_id,
+                "graph_id": spec.graph_id,
+                "task_family": "graph",
+                "problem_type": spec.problem_type,
+                "directed": str(spec.directed).lower(),
+                "algorithm": result.algorithm,
+                "library": result.library,
+                "library_version": result.library_version,
+                "graph_hash": spec.graph_hash,
+                "spec_hash": spec.spec_hash,
+                "source": spec.source,
+                "sink": spec.sink,
+            }
+        )
+        mlflow.log_params(
+            {
+                "node_count": len(spec.nodes),
+                "edge_count": len(spec.edges),
+                "source": spec.source,
+                "sink": spec.sink,
+                "algorithm": spec.algorithm,
+                "capacity_attribute": spec.capacity_attribute,
+                "graph_hash": spec.graph_hash,
+            }
+        )
+        mlflow.log_metrics(
+            {
+                "max_flow_value": result.max_flow_value,
+                "min_cut_capacity": oracle.minimum_cut_capacity,
+                "flow_cut_gap": gap,
+                "runtime_seconds": result.runtime_seconds,
+                "min_cut_count": float(oracle.minimum_cut_count),
+            }
+        )
+        experiment_dir = paths.experiments_dir / spec.experiment_id
+        mlflow.log_artifacts(str(experiment_dir), artifact_path="experiment")
+        run_id = run.info.run_id
+
+    record = MLflowRunRecord(
+        run_id=run_id,
+        tracking_uri=uri,
+        experiment_name=paths.root.name,
+        logged_at=datetime.now(UTC).replace(microsecond=0),
+    )
+    atomic_write_text(
+        paths.experiments_dir / spec.experiment_id / "mlflow_run.json",
+        record.model_dump_json(indent=2) + "\n",
+    )
+    return record
 
 
 def log_simulation_run(

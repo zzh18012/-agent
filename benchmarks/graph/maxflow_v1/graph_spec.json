@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "graph_id": "maxflow-benchmark-v1",
+  "experiment_id": "exp-maxflow-benchmark-v1",
+  "problem_type": "maximum_flow",
+  "directed": true,
+  "nodes": ["s", "a", "b", "c", "d", "e", "f", "t"],
+  "edges": [
+    {"u": "s", "v": "a", "capacity": 6},
+    {"u": "s", "v": "b", "capacity": 6},
+    {"u": "a", "v": "c", "capacity": 4},
+    {"u": "a", "v": "d", "capacity": 2},
+    {"u": "b", "v": "c", "capacity": 2},
+    {"u": "b", "v": "d", "capacity": 4},
+    {"u": "c", "v": "e", "capacity": 6},
+    {"u": "d", "v": "f", "capacity": 6},
+    {"u": "e", "v": "t", "capacity": 6},
+    {"u": "f", "v": "t", "capacity": 6}
+  ],
+  "source": "s",
+  "sink": "t",
+  "capacity_attribute": "capacity",
+  "algorithm": "edmonds_karp"
+}

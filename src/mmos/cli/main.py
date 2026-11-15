@@ -75,6 +75,11 @@ from mmos.experiments.optimization_tournament import (
 from mmos.experiments.planner import ExperimentPlanner
 from mmos.experiments.tournament import Tournament
 from mmos.experiments.workflow import run_experiment_workflow
+from mmos.graph_pipeline import (
+    GraphPipelineBlocked,
+    GraphPipelineOptions,
+    run_graph_pipeline,
+)
 from mmos.orchestration import Orchestrator
 from mmos.paper import PaperError, build_paper, render_paper
 from mmos.paper.optimization_builder import build_optimization_paper
@@ -184,7 +189,9 @@ def init(
         TaskFamily,
         typer.Option(
             "--task",
-            help="Task family: prediction | forecasting | optimization | simulation.",
+            help=(
+                "Task family: prediction | forecasting | optimization | simulation | graph."
+            ),
         ),
     ] = TaskFamily.PREDICTION,
     projects_dir: Annotated[
@@ -1389,6 +1396,54 @@ def simulate(
     console.print(f"Experiment: {summary.experiment_id}")
     console.print(f"Spec hash: {summary.spec_hash}")
     console.print(f"Replications: {summary.n_replications}")
+    console.print(f"Validation: {summary.validation}")
+    console.print(f"Claim: {summary.claim_id or 'none'}")
+    console.print(f"Red team: {summary.red_team_overall}")
+    console.print(f"Project state: {summary.state.value}")
+    console.print(f"Paper: {summary.paper_path}")
+    console.print(f"Release: {summary.release_path}")
+
+
+@app.command(name="graph-run")
+def graph_run(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    spec_file: Annotated[Path, typer.Argument(help="GraphProblemSpec JSON file.")],
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Run a formal graph experiment through the shared lifecycle."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    config = load_project_config(paths)
+    if config.task is not TaskFamily.GRAPH:
+        console.print(
+            f"Error: graph-run requires a graph project; current task is "
+            f"{config.task.value}.",
+            style="red",
+        )
+        raise typer.Exit(code=1)
+
+    options = GraphPipelineOptions(spec_file=spec_file)
+    try:
+        summary = run_graph_pipeline(
+            paths,
+            options,
+            lambda ast, experiment_id: RedTeam(_model_or_exit()).run(
+                ast, experiment_id=experiment_id
+            ),
+        )
+    except GraphPipelineBlocked as exc:
+        console.print(f"Graph blocked: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+    except (ValueError, FileNotFoundError, EvidenceError, PaperError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"Graph: {summary.graph_id}")
+    console.print(f"Experiment: {summary.experiment_id}")
+    console.print(f"Graph hash: {summary.graph_hash}")
+    console.print(f"Max flow: {summary.max_flow_value}")
+    console.print(f"Min cut: {summary.min_cut_capacity}")
     console.print(f"Validation: {summary.validation}")
     console.print(f"Claim: {summary.claim_id or 'none'}")
     console.print(f"Red team: {summary.red_team_overall}")

@@ -9,6 +9,13 @@ from pathlib import Path
 import yaml
 
 from mmos.schemas.experiment import ExperimentSpec
+from mmos.schemas.graph import (
+    FlowAuditResult,
+    GraphExperimentRecord,
+    GraphProblemSpec,
+    GraphResult,
+    MinCutOracle,
+)
 from mmos.schemas.optimization import (
     OptimizationExperimentRecord,
     OptimizationResult,
@@ -391,6 +398,101 @@ def load_simulation_record(
 
 def replications_file(paths: ProjectPaths, experiment_id: str) -> Path:
     return paths.experiment_dir(experiment_id) / "artifacts" / "replications.csv"
+
+
+def graph_spec_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "graph_spec.json"
+
+
+def save_graph_spec(paths: ProjectPaths, spec: GraphProblemSpec) -> Path:
+    target = graph_spec_file(paths, spec.experiment_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, spec.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_graph_spec(paths: ProjectPaths, experiment_id: str) -> GraphProblemSpec:
+    return GraphProblemSpec.model_validate_json(
+        graph_spec_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
+
+
+def graph_result_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "artifacts" / "graph_result.json"
+
+
+def save_graph_result(paths: ProjectPaths, result: GraphResult) -> Path:
+    target = graph_result_file(paths, result.experiment_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, result.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_graph_result(paths: ProjectPaths, experiment_id: str) -> GraphResult:
+    return GraphResult.model_validate_json(
+        graph_result_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
+
+
+def min_cut_oracle_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "artifacts" / "min_cut_oracle.json"
+
+
+def save_min_cut_oracle(
+    paths: ProjectPaths, experiment_id: str, oracle: MinCutOracle
+) -> Path:
+    target = min_cut_oracle_file(paths, experiment_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, oracle.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_min_cut_oracle(paths: ProjectPaths, experiment_id: str) -> MinCutOracle:
+    return MinCutOracle.model_validate_json(
+        min_cut_oracle_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
+
+
+def flow_audit_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "artifacts" / "flow_audit.json"
+
+
+def save_flow_audit(
+    paths: ProjectPaths, experiment_id: str, audit: FlowAuditResult
+) -> Path:
+    target = flow_audit_file(paths, experiment_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, audit.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_flow_audit(paths: ProjectPaths, experiment_id: str) -> FlowAuditResult:
+    return FlowAuditResult.model_validate_json(
+        flow_audit_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
+
+
+def edge_flows_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "artifacts" / "edge_flows.csv"
+
+
+def graph_record_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "graph_experiment_record.json"
+
+
+def save_graph_record(paths: ProjectPaths, record: GraphExperimentRecord) -> Path:
+    target = graph_record_file(paths, record.experiment_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, record.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_graph_record(
+    paths: ProjectPaths, experiment_id: str
+) -> GraphExperimentRecord:
+    return GraphExperimentRecord.model_validate_json(
+        graph_record_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
 
 
 def experiment_record_file(paths: ProjectPaths, experiment_id: str) -> Path:
