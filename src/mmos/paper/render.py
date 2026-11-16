@@ -59,14 +59,15 @@ def render_markdown(ast: PaperAST) -> str:
     return _render(ast, lambda figure: figure.path)
 
 
-def render_paper(paths: ProjectPaths, ast: PaperAST) -> Path:
+def render_paper(paths: ProjectPaths, ast: PaperAST, *, target: Path | None = None) -> Path:
     paper_dir = paths.root / "paper"
     paper_dir.mkdir(parents=True, exist_ok=True)
+    resolved_target = target or (paper_dir / "report.md")
+    resolved_target.parent.mkdir(parents=True, exist_ok=True)
 
     def figure_href(figure: PaperFigure) -> str:
         absolute = paths.root / figure.path
-        return Path(os.path.relpath(absolute, paper_dir)).as_posix()
+        return Path(os.path.relpath(absolute, resolved_target.parent)).as_posix()
 
-    target = paper_dir / "report.md"
-    atomic_write_text(target, _render(ast, figure_href))
-    return target
+    atomic_write_text(resolved_target, _render(ast, figure_href))
+    return resolved_target

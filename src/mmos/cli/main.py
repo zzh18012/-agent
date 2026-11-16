@@ -31,6 +31,18 @@ from mmos.benchmark_pipeline import (
     BenchmarkPipelineOptions,
     run_benchmark_pipeline,
 )
+from mmos.competition.agents import (
+    CompetitionAgents,
+    ExperimentAnalyst,
+    FigureDesigner,
+    MathAuditor,
+    PaperArchitect,
+)
+from mmos.competition_pipeline import (
+    CompetitionPaperBlocked,
+    CompetitionPaperError,
+    run_competition_paper,
+)
 from mmos.config import get_settings
 from mmos.core.dataset import dataset_fingerprint
 from mmos.core.problem_text import collect_problem_text
@@ -1811,3 +1823,57 @@ def run_plan(
     console.print(f"Project state: {summary.state.value}")
     console.print(f"Paper: {summary.paper_path}")
     console.print(f"Release: {summary.release_path}")
+
+
+@app.command(name="competition-paper")
+def competition_paper(
+    project: Annotated[str, typer.Argument(help="Released project id or directory.")],
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Draft a competition-style paper from verified evidence and audit it."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    config = load_project_config(paths)
+    if config.state is not ProjectState.RELEASED:
+        console.print(
+            f"Error: competition-paper requires a RELEASED project; current state is "
+            f"{config.state.value}.",
+            style="red",
+        )
+        raise typer.Exit(code=1)
+
+    shared_model = _model_or_exit()
+    agents = CompetitionAgents(
+        architect=PaperArchitect(shared_model),
+        math_auditor=MathAuditor(shared_model),
+        experiment_analyst=ExperimentAnalyst(shared_model),
+        figure_designer=FigureDesigner(shared_model),
+    )
+    try:
+        summary = run_competition_paper(
+            paths,
+            agents,
+            lambda ast, run_id: RedTeam(shared_model).run(
+                ast, experiment_id=run_id
+            ),
+        )
+    except CompetitionPaperBlocked as exc:
+        console.print(f"Competition paper blocked: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+    except (CompetitionPaperError, ValueError, FileNotFoundError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"Run: {summary.run.run_id}")
+    console.print(f"Source release: {summary.run.source_release}")
+    console.print(f"Context hash: {summary.run.context_hash}")
+    console.print(f"Paper: {summary.run.paper_path}")
+    console.print(
+        f"Experiment requests: {summary.request_count} "
+        f"({summary.unsupported_request_count} unsupported)"
+    )
+    console.print(f"Red team: {summary.run.red_team_overall}")
+    console.print(f"Review: {summary.run.review_path}")
+    console.print(f"Release: {summary.run.release_path}")
+    console.print("No requested experiment was executed.")
