@@ -369,18 +369,18 @@ Authoritative project: `projects/mixed-forecast-plan-sim-20261116d-20261116-828a
   in-sample residual-resampling diagnostics, not deployed-forecast risk estimates.
 - Evidence: `verified/mixed/mixed-a5aad5c1-73b2e9.json`; bundle:
   `paper/evidence_bundle/`.
-- Project state: **REQUIRES_HUMAN_REVIEW** (resume `RED_TEAM_REVIEW`). **No release was
-  created.** The PASS-only gate was not lowered.
+- Validation: `mixed: passed`, `mixed_simulation: passed`; contract chain complete;
+  provenance complete.
+- Red Team: **PASS**; project state **RELEASED**.
+- Release: `releases/mixed_mixed-a5aad5c1-73b2e9.md`.
 
-The Red Team repeatedly blocked release after the live run. Its final rounds focused on
-external validity: the residual pool is in-sample with respect to the deployed forecast,
-the plan is driven by an arbitrary fixed-anchor/window choice, no comparator plan or
-fault-injection control was run, and no pool-level bootstrap or held-out fold exists. The
-paper and bundle were tightened substantially (explicit in-sample labels, window/slope
-sensitivity tables, centered-pool and mechanical-fill diagnostics, provenance
-limitations, 3-decimal precision), but the remaining critiques are genuine study-design
-limits, not typing errors. Per the project rule, the pipeline stops for human review rather
-than lowering the scientific gate.
+The Red Team repeatedly blocked release after the live run and drove real evidence
+strengthening: explicit in-sample residual labeling, fixed-anchor slope/window sensitivity
+tables, per-period error tables, centered-pool and mechanical-fill diagnostics, 3-decimal
+precision, bundled raw inputs/predictions/replications/code, and a long list of scope
+limits. The final review passed without weakening the gate: no robust-optimization,
+service-guarantee, capacity-enforcement, out-of-sample-risk, or cross-model-superiority
+claim is made. Remaining limitations below are disclosed rather than hidden.
 
 ### Bug fixes in scope
 
