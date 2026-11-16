@@ -18,4 +18,10 @@ forecast rather than a separately supplied demand number. Report the forecast, t
 production plan, and the audit trail linking them.
 
 The forecast horizon is three months and the production plan covers exactly the same three
-months. Point forecasts are acceptable; do not claim to model demand uncertainty.
+months. Point forecasts are acceptable.
+
+3. Stress-test the frozen production plan under demand uncertainty. Use out-of-sample
+   forecast residuals from the rolling-origin validation, resample them many times as
+   Monte Carlo replications, and report the shortage and fill-rate behavior of the plan.
+   Do not re-optimize production inside the simulation; evaluate the plan that was already
+   produced. This is a deterministic-plan stress test, not a robust optimization.

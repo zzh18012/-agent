@@ -9,6 +9,11 @@ from mmos.core.project import ProjectPaths, atomic_write_text
 from mmos.schemas.benchmark import BenchmarkSuiteResult
 from mmos.schemas.experiment import ExperimentResult, ExperimentSpec
 from mmos.schemas.graph import GraphProblemSpec, GraphResult, MinCutOracle
+from mmos.schemas.mixed_simulation import (
+    MixedSimulationRecord,
+    MixedSimulationResult,
+    MixedSimulationSpec,
+)
 from mmos.schemas.multi_objective import (
     MultiObjectiveResult,
     MultiObjectiveSpec,
@@ -394,6 +399,78 @@ def log_simulation_run(
         record.model_dump_json(indent=2) + "\n",
     )
     return record
+
+
+def log_mixed_simulation_run(
+    paths: ProjectPaths,
+    spec: MixedSimulationSpec,
+    result: MixedSimulationResult,
+    record: MixedSimulationRecord,
+) -> MLflowRunRecord:
+    """One formal MLflow run for a mixed-plan stress-test simulation."""
+    uri = tracking_uri(paths)
+    mlflow.set_tracking_uri(uri)
+    client = MlflowClient(tracking_uri=uri)
+    experiment_id = _experiment_id(client, paths)
+
+    with mlflow.start_run(
+        experiment_id=experiment_id, run_name=spec.simulation_experiment_id
+    ) as run:
+        mlflow.set_tags(
+            {
+                "project_id": paths.root.name,
+                "experiment_id": spec.simulation_experiment_id,
+                "simulation_id": spec.simulation_id,
+                "task_family": "simulation",
+                "simulation_kind": "mixed_plan_stress_test",
+                "spec_hash": spec.spec_hash,
+                "git_commit": record.git_commit,
+                "production_plan_artifact_id": spec.production_plan_artifact_id,
+                "production_plan_artifact_hash": spec.production_plan_artifact_hash,
+                "forecast_error_artifact_id": spec.forecast_error_artifact_id,
+                "forecast_error_artifact_hash": spec.forecast_error_artifact_hash,
+            }
+        )
+        mlflow.log_params(
+            {
+                "planning_horizon": spec.planning_horizon,
+                "replications": spec.replications,
+                "master_seed": spec.master_seed,
+                "seed_derivation": spec.seed_derivation,
+                "residual_sampling_method": spec.residual_sampling_method,
+                "demand_floor_policy": spec.demand_floor_policy,
+                "confidence_level": spec.confidence_level,
+                "unit": spec.unit,
+            }
+        )
+        for metric, summary in result.metrics.items():
+            mlflow.log_metrics(
+                {
+                    f"mean_{metric}": summary.mean,
+                    f"std_{metric}": summary.std,
+                    f"median_{metric}": summary.median,
+                    f"ci_low_{metric}": summary.ci_low,
+                    f"ci_high_{metric}": summary.ci_high,
+                }
+            )
+        mlflow.log_metric(
+            "any_shortage_probability", result.any_shortage_probability
+        )
+        experiment_dir = paths.experiments_dir / spec.simulation_experiment_id
+        mlflow.log_artifacts(str(experiment_dir), artifact_path="experiment")
+        run_id = run.info.run_id
+
+    run_record = MLflowRunRecord(
+        run_id=run_id,
+        tracking_uri=uri,
+        experiment_name=paths.root.name,
+        logged_at=datetime.now(UTC).replace(microsecond=0),
+    )
+    atomic_write_text(
+        paths.experiments_dir / spec.simulation_experiment_id / "mlflow_run.json",
+        run_record.model_dump_json(indent=2) + "\n",
+    )
+    return run_record
 
 
 def log_optimization_tournament(

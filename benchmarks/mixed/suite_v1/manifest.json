@@ -4,18 +4,27 @@
   "cases": [
     {
       "case_id": "forecast_to_production_plan",
-      "problem_hash": "f5a40aafa7998e42d0874e2eec7d31092da0ee8eefac80ea21fbdf906e572ced",
+      "problem_hash": "7e06b0fb7f1096681c567522eee18c9c040fee58461f11fb486c2672457b3109",
       "data_sha256": "01cab469a95b8a821350c5ec62c6b81badd4d1b701177ea3270e16b804f97bf7",
-      "spec_sha256": "fac4e9c8fea0e876840802895893835d90fb8f5e4f0636bfb9b254f4ed20bab5",
+      "spec_sha256": "b0c0ee245611edcb179e37e74d21a328a2966aa32f4124f3a72f82540d8082f0",
       "expected_status": "MULTI_TASK",
       "expected_tasks": [
         "forecasting",
-        "optimization"
+        "optimization",
+        "simulation"
       ],
       "expected_dependency_hints": [
         [
           "forecasting",
           "optimization"
+        ],
+        [
+          "forecasting",
+          "simulation"
+        ],
+        [
+          "optimization",
+          "simulation"
         ]
       ],
       "expected_horizon": 3,
@@ -23,7 +32,8 @@
         "2026-01",
         "2026-02",
         "2026-03"
-      ]
+      ],
+      "expected_simulation_replications": 500
     }
   ]
 }

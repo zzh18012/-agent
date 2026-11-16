@@ -25,48 +25,67 @@ def build_mixed_plan(
         raise MixedPlanError(
             f"mixed plan requires MULTI_TASK routing, got {routing.status.value}"
         )
+    simulation_enabled = spec.simulation_replications is not None
     families = set(routing.required_task_families)
-    if families != {TaskFamily.FORECASTING, TaskFamily.OPTIMIZATION}:
+    expected = {TaskFamily.FORECASTING, TaskFamily.OPTIMIZATION}
+    if simulation_enabled:
+        expected.add(TaskFamily.SIMULATION)
+    if families != expected:
         raise MixedPlanError(
-            "first mixed slice supports exactly forecasting -> optimization; "
+            "mixed slice supports forecasting -> optimization "
+            "(+ simulation when requested); "
             f"got {sorted(task.value for task in families)}"
         )
     hints = {
         (hint.from_task, hint.to_task) for hint in routing.dependency_hints
     }
-    if (TaskFamily.FORECASTING, TaskFamily.OPTIMIZATION) not in hints:
+    required_hints = {(TaskFamily.FORECASTING, TaskFamily.OPTIMIZATION)}
+    if simulation_enabled:
+        required_hints.add((TaskFamily.FORECASTING, TaskFamily.SIMULATION))
+        required_hints.add((TaskFamily.OPTIMIZATION, TaskFamily.SIMULATION))
+    missing_hints = required_hints - hints
+    if missing_hints:
         raise MixedPlanError(
-            "routing must declare a forecasting -> optimization dependency hint"
+            "routing is missing dependency hints: "
+            + ", ".join(
+                f"{source.value}->{target.value}"
+                for source, target in sorted(missing_hints)
+            )
         )
-    forecast_routes = [
-        route
-        for route in routing.subproblem_routes
-        if TaskFamily.FORECASTING in route.task_families
-    ]
-    optimization_routes = [
-        route
-        for route in routing.subproblem_routes
-        if TaskFamily.OPTIMIZATION in route.task_families
-    ]
-    if len(forecast_routes) != 1 or len(optimization_routes) != 1:
-        raise MixedPlanError(
-            "first mixed slice requires exactly one forecasting and one optimization "
-            "subproblem route"
-        )
-    forecast_subproblem = forecast_routes[0].subproblem_id
-    optimization_subproblem = optimization_routes[0].subproblem_id
-    if forecast_subproblem not in {item.subproblem_id for item in problem.subproblems}:
-        raise MixedPlanError("forecast subproblem is not in the ProblemSpec")
-    if optimization_subproblem not in {item.subproblem_id for item in problem.subproblems}:
-        raise MixedPlanError("optimization subproblem is not in the ProblemSpec")
+    required_families = [TaskFamily.FORECASTING, TaskFamily.OPTIMIZATION]
+    if simulation_enabled:
+        required_families.append(TaskFamily.SIMULATION)
+    subproblem_ids: dict[TaskFamily, str] = {}
+    for family in required_families:
+        routes = [
+            route
+            for route in routing.subproblem_routes
+            if family in route.task_families
+        ]
+        if len(routes) != 1:
+            raise MixedPlanError(
+                f"mixed slice requires exactly one {family.value} subproblem route"
+            )
+        subproblem_ids[family] = routes[0].subproblem_id
+    known_subproblems = {item.subproblem_id for item in problem.subproblems}
+    for family, subproblem_id in subproblem_ids.items():
+        if subproblem_id not in known_subproblems:
+            raise MixedPlanError(
+                f"{family.value} subproblem is not in the ProblemSpec"
+            )
+    forecast_subproblem = subproblem_ids[TaskFamily.FORECASTING]
+    optimization_subproblem = subproblem_ids[TaskFamily.OPTIMIZATION]
 
+    forecast_outputs = ["demand_forecast"]
+    if simulation_enabled:
+        forecast_outputs.append("forecast_error")
     nodes = [
         TaskNode(
             node_id="forecast_node",
             subproblem_id=forecast_subproblem,
             task_family=TaskFamily.FORECASTING,
             required_inputs=["historical_demand"],
-            produced_outputs=["demand_forecast"],
+            produced_outputs=forecast_outputs,
         ),
         TaskNode(
             node_id="optimization_node",
@@ -86,6 +105,38 @@ def build_mixed_plan(
             required_schema_version="1.0",
         )
     ]
+    terminal_nodes = ["optimization_node"]
+    if simulation_enabled:
+        nodes.append(
+            TaskNode(
+                node_id="simulation_node",
+                subproblem_id=subproblem_ids[TaskFamily.SIMULATION],
+                task_family=TaskFamily.SIMULATION,
+                required_inputs=["production_plan", "forecast_error"],
+                produced_outputs=["risk_evidence"],
+            )
+        )
+        edges.extend(
+            [
+                ArtifactEdge(
+                    producer_node="forecast_node",
+                    producer_output="forecast_error",
+                    consumer_node="simulation_node",
+                    consumer_input="forecast_error",
+                    required_artifact_type="forecast_error",
+                    required_schema_version="1.0",
+                ),
+                ArtifactEdge(
+                    producer_node="optimization_node",
+                    producer_output="production_plan",
+                    consumer_node="simulation_node",
+                    consumer_input="production_plan",
+                    required_artifact_type="production_plan",
+                    required_schema_version="1.0",
+                ),
+            ]
+        )
+        terminal_nodes = ["simulation_node"]
     draft = MixedExecutionPlan(
         plan_id="plan-pending",
         project_id=paths.root.name,
@@ -95,7 +146,7 @@ def build_mixed_plan(
         nodes=nodes,
         edges=edges,
         entry_nodes=["forecast_node"],
-        terminal_nodes=["optimization_node"],
+        terminal_nodes=terminal_nodes,
         spec=spec.with_hash(),
         created_at=datetime.now(UTC).replace(microsecond=0),
     )

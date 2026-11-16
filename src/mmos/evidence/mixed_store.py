@@ -18,9 +18,23 @@ from mmos.core.project import (
 )
 from mmos.evidence.store import EvidenceError, load_evidence_index
 from mmos.mixed.artifacts import load_envelope
+from mmos.mixed.simulation import (
+    load_mixed_simulation_record,
+    load_mixed_simulation_result,
+    load_mixed_simulation_spec,
+    mixed_simulation_record_file,
+    mixed_simulation_result_file,
+    mixed_simulation_spec_file,
+)
 from mmos.mixed.validation import run_record_path
 from mmos.schemas.evidence import EvidenceRecord
-from mmos.schemas.mixed import DAGRunRecord, ForecastArtifact, MixedExecutionPlan
+from mmos.schemas.mixed import (
+    DAGRunRecord,
+    ForecastArtifact,
+    ForecastErrorArtifact,
+    MixedExecutionPlan,
+    ProductionPlanArtifact,
+)
 from mmos.schemas.validation import ValidationReport, ValidationStatus
 
 
@@ -38,6 +52,19 @@ def freeze_mixed(
     report = ValidationReport.model_validate_json(report_path.read_text(encoding="utf-8"))
     if report.blocking or report.status is not ValidationStatus.PASSED:
         raise EvidenceError("mixed validator did not pass")
+    simulation_report = None
+    simulation_report_path = validation_dir / "mixed_simulation.json"
+    if plan.has_simulation_node():
+        if not simulation_report_path.exists():
+            raise EvidenceError("mixed simulation validator report is missing")
+        simulation_report = ValidationReport.model_validate_json(
+            simulation_report_path.read_text(encoding="utf-8")
+        )
+        if (
+            simulation_report.blocking
+            or simulation_report.status is not ValidationStatus.PASSED
+        ):
+            raise EvidenceError("mixed simulation validator did not pass")
 
     record_path = run_record_path(paths, run_id)
     record = DAGRunRecord.model_validate_json(record_path.read_text(encoding="utf-8"))
@@ -68,6 +95,47 @@ def freeze_mixed(
         "optimization_result": sha256_file(optimization_result_path),
         "optimization_record": sha256_file(optimization_record_path),
     }
+    plan_envelope = None
+    plan_artifact = None
+    error_envelope = None
+    error_artifact = None
+    simulation_spec = None
+    simulation_result = None
+    if plan.has_simulation_node():
+        run_artifacts = paths.mixed_dir / "runs" / run_id / "artifacts"
+        plan_envelope_path = run_artifacts / "production_plan_envelope.json"
+        error_envelope_path = run_artifacts / "forecast_error_envelope.json"
+        plan_envelope = load_envelope(plan_envelope_path)
+        plan_artifact = ProductionPlanArtifact.model_validate_json(
+            (paths.root / plan_envelope.payload_path).read_text(encoding="utf-8")
+        )
+        error_envelope = load_envelope(error_envelope_path)
+        error_artifact = ForecastErrorArtifact.model_validate_json(
+            (paths.root / error_envelope.payload_path).read_text(encoding="utf-8")
+        )
+        if record.simulation_experiment_id is None:
+            raise EvidenceError("mixed run has no simulation experiment")
+        simulation_id = record.simulation_experiment_id
+        simulation_spec = load_mixed_simulation_spec(paths, simulation_id)
+        simulation_result = load_mixed_simulation_result(paths, simulation_id)
+        load_mixed_simulation_record(paths, simulation_id)
+        hashes.update(
+            {
+                "plan_envelope": sha256_file(plan_envelope_path),
+                "plan_artifact": sha256_file(paths.root / plan_envelope.payload_path),
+                "error_envelope": sha256_file(error_envelope_path),
+                "error_artifact": sha256_file(paths.root / error_envelope.payload_path),
+                "simulation_spec": sha256_file(
+                    mixed_simulation_spec_file(paths, simulation_id)
+                ),
+                "simulation_result": sha256_file(
+                    mixed_simulation_result_file(paths, simulation_id)
+                ),
+                "simulation_record": sha256_file(
+                    mixed_simulation_record_file(paths, simulation_id)
+                ),
+            }
+        )
     now = datetime.now(UTC).replace(microsecond=0)
     provenance = {
         "kind": "mixed",
@@ -99,6 +167,32 @@ def freeze_mixed(
         "solver_version": optimization_result.solver_version,
         "git_commit": optimization_record.git_commit,
     }
+    if simulation_spec is not None and simulation_result is not None:
+        if plan_envelope is None or error_envelope is None:
+            raise EvidenceError("simulation evidence is missing plan or error artifacts")
+        provenance.update(
+            {
+                "production_plan_artifact_id": plan_envelope.artifact_id,
+                "production_plan_artifact_hash": plan_envelope.content_hash,
+                "production_plan_envelope_sha256": hashes["plan_envelope"],
+                "production_plan_payload_sha256": hashes["plan_artifact"],
+                "forecast_error_artifact_id": error_envelope.artifact_id,
+                "forecast_error_artifact_hash": error_envelope.content_hash,
+                "forecast_error_envelope_sha256": hashes["error_envelope"],
+                "forecast_error_payload_sha256": hashes["error_artifact"],
+                "simulation_experiment_id": simulation_spec.simulation_experiment_id,
+                "simulation_spec_sha256": hashes["simulation_spec"],
+                "simulation_result_sha256": hashes["simulation_result"],
+                "simulation_record_sha256": hashes["simulation_record"],
+                "simulation_seed_hash": simulation_result.replication_seed_hash,
+                "simulation_replications": str(simulation_result.n_replications),
+                "contract_chain_complete": str(record.contract_chain_complete).lower(),
+            }
+        )
+
+    validation_reports = [report.validator]
+    if simulation_report is not None:
+        validation_reports.append(simulation_report.validator)
 
     def evidence(evidence_id: str, key: str, value: float | int | str) -> EvidenceRecord:
         display = f"{value:.10g}" if isinstance(value, float) else str(value)
@@ -111,7 +205,7 @@ def freeze_mixed(
             artifact_path=record_path.relative_to(paths.root).as_posix(),
             artifact_hash=hashes["run"],
             source_field=key,
-            validation_reports=[report.validator],
+            validation_reports=validation_reports,
             verified_at=now,
             provenance=provenance,
         )
@@ -220,6 +314,108 @@ def freeze_mixed(
                 value,
             )
         )
+    if simulation_result is not None and simulation_spec is not None:
+        if (
+            plan_envelope is None
+            or plan_artifact is None
+            or error_envelope is None
+            or error_artifact is None
+        ):
+            raise EvidenceError("simulation evidence is missing artifacts")
+        records.extend(
+            [
+                evidence(
+                    f"ev-mixed-{run_id}-production-plan-id",
+                    "mixed.production_plan.artifact_id",
+                    plan_envelope.artifact_id,
+                ),
+                evidence(
+                    f"ev-mixed-{run_id}-production-plan-hash",
+                    "mixed.production_plan.artifact_hash",
+                    plan_envelope.content_hash,
+                ),
+                evidence(
+                    f"ev-mixed-{run_id}-forecast-error-id",
+                    "mixed.forecast_error.artifact_id",
+                    error_envelope.artifact_id,
+                ),
+                evidence(
+                    f"ev-mixed-{run_id}-forecast-error-hash",
+                    "mixed.forecast_error.artifact_hash",
+                    error_envelope.content_hash,
+                ),
+                evidence(
+                    f"ev-mixed-{run_id}-forecast-error-definition",
+                    "mixed.forecast_error.residual_definition",
+                    error_artifact.residual_definition,
+                ),
+                evidence(
+                    f"ev-mixed-{run_id}-forecast-error-source",
+                    "mixed.forecast_error.residual_source",
+                    error_artifact.residual_source,
+                ),
+                evidence(
+                    f"ev-mixed-{run_id}-forecast-error-samples",
+                    "mixed.forecast_error.sample_count",
+                    error_artifact.sample_count,
+                ),
+                evidence(
+                    f"ev-mixed-{run_id}-forecast-error-mean",
+                    "mixed.forecast_error.mean",
+                    error_artifact.mean,
+                ),
+                evidence(
+                    f"ev-mixed-{run_id}-forecast-error-std",
+                    "mixed.forecast_error.std",
+                    error_artifact.std,
+                ),
+                evidence(
+                    f"ev-mixed-{run_id}-simulation-experiment",
+                    "mixed.simulation.experiment_id",
+                    simulation_spec.simulation_experiment_id,
+                ),
+                evidence(
+                    f"ev-mixed-{run_id}-simulation-seed-hash",
+                    "mixed.simulation.seed_hash",
+                    simulation_result.replication_seed_hash,
+                ),
+                evidence(
+                    f"ev-mixed-{run_id}-simulation-replications",
+                    "mixed.simulation.replications",
+                    simulation_result.n_replications,
+                ),
+                evidence(
+                    f"ev-mixed-{run_id}-simulation-shortage",
+                    "mixed.simulation.shortage.mean_total_shortage",
+                    simulation_result.metrics["total_shortage"].mean,
+                ),
+                evidence(
+                    f"ev-mixed-{run_id}-simulation-fill-rate",
+                    "mixed.simulation.service.mean_fill_rate",
+                    simulation_result.metrics["fill_rate"].mean,
+                ),
+                evidence(
+                    f"ev-mixed-{run_id}-simulation-any-shortage",
+                    "mixed.simulation.any_shortage_probability",
+                    simulation_result.any_shortage_probability,
+                ),
+                evidence(
+                    f"ev-mixed-{run_id}-simulation-distinct-paths",
+                    "mixed.simulation.distinct_residual_paths",
+                    simulation_result.distinct_residual_paths,
+                ),
+                evidence(
+                    f"ev-mixed-{run_id}-simulation-floor-activations",
+                    "mixed.simulation.demand_floor_activations",
+                    simulation_result.demand_floor_activations,
+                ),
+                evidence(
+                    f"ev-mixed-{run_id}-contract-chain",
+                    "mixed.contract_chain_complete",
+                    str(record.contract_chain_complete).lower(),
+                ),
+            ]
+        )
 
     index = load_evidence_index(paths)
     for item in records:
@@ -246,9 +442,14 @@ def freeze_mixed(
         if provenance_path.exists()
         else {"schema_version": 1, "experiments": {}}
     )
+    validation_report_hashes = {"mixed": sha256_file(report_path)}
+    if simulation_report_path.exists():
+        validation_report_hashes["mixed_simulation"] = sha256_file(
+            simulation_report_path
+        )
     provenance_index["experiments"][f"mixed:{run_id}"] = {
         **provenance,
-        "validation_reports": {"mixed": sha256_file(report_path)},
+        "validation_reports": validation_report_hashes,
         "frozen_at": now.isoformat(),
     }
     atomic_write_text(provenance_path, json.dumps(provenance_index, indent=2) + "\n")

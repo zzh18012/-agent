@@ -285,6 +285,124 @@ Project: `projects/mixed-forecast-plan-20261116c-20261116-7a954e`.
 - `uv run ruff check .`: passed.
 - `uv run pyright`: 0 errors.
 
+## 21.3 — Mixed Modeling DAG: Forecasting -> Optimization -> Simulation
+
+### Scope and architecture
+
+The DAG now has three nodes and three artifact edges: forecasting produces a point
+forecast and a residual artifact; optimization consumes the forecast and produces a
+`ProductionPlanArtifact`; simulation consumes the frozen plan and the residual artifact.
+No new TaskFamily was added. The slice supports only this path; no branching, arbitrary DAG
+engine, scenario-tree optimization, robust optimization, or `mmos solve` was introduced.
+A two-node plan remains the default when `simulation_replications` is absent, preserving
+the Phase 21.2 behavior.
+
+### Artifacts and simulation
+
+- `ProductionPlanArtifact` records planning horizon, timestamps, production, planned
+  inventory, capacities, unit, objective, forecast identity, and optimization experiment.
+- `ForecastErrorArtifact` records `residual = actual - forecast`, source experiment and
+  forecast artifact identity, fold id, row index, timestamp, actual, forecast, residual,
+  sample count, mean, and sample standard deviation. The artifact is built only from
+  rolling-origin test rows; the builder rejects training rows.
+- The mixed simulation spec freezes the plan/forecast/error artifact ids and hashes,
+  horizon, unit, replications, master seed, empirical iid sampling method, demand floor
+  policy, metrics, and confidence level.
+- Simulation never re-optimizes production. Each replication samples H residuals with
+  replacement, forms `max(0, point forecast + residual)` demand, and applies lost-sales
+  dynamics: `available = opening + production`, `served = min(available, demand)`,
+  `shortage = max(0, demand - available)`, `ending = available - served`.
+- Seeds reuse the formal sha256 master-seed schedule; two in-process runs are compared by
+  a replication digest. Metrics include total shortage, shortage-period count, fill rate,
+  ending/average inventory, and maximum shortage. Implausible high-precision risk claims
+  are deliberately not made; the paper reports finite-sample diagnostics.
+
+### Validation, evidence, paper, and lifecycle
+
+`validate_mixed_simulation_experiment` independently checks the plan and residual
+contracts, cross-task unit/horizon/timestamp alignment, plan immutability, OOF residual
+provenance against `predictions.parquet` and fold windows, seed schedule uniqueness and
+hash, replication completeness, inventory/shortage arithmetic, metric recomputation,
+consumed artifact identity, and provenance. `validate_mixed_run` additionally checks the
+DAG-level links and run summary.
+
+Mixed evidence now includes plan, residual, simulation, seed, shortage, fill, contract
+chain, and path-diversity fields. Staleness is directional: a changed forecast stales
+optimization and simulation; a changed residual or plan stales only simulation.
+`paper/evidence_bundle` is written with the raw inputs, manifest, frozen spec, predictions,
+residual pool, replication CSV, DAG evidence, code, and `SHA256SUMS`.
+
+### Tests and checks
+
+`tests/test_mixed_simulation.py` adds 11 tests: three-node topology, residual direction,
+training-row rejection, manual inventory/service arithmetic, seed reproducibility, no
+optimization call, unit/horizon blocking, residual-signature stale propagation (residual
+change stales simulation only; forecast change stales both; plan change stales simulation),
+three-node end-to-end lineage/release resume, and evidence-change resume rejection. The
+Phase 21.2 tests remain green.
+
+- Full `uv run pytest`: 282 passed, 3 integration deselected.
+- `uv run ruff check .`: passed.
+- `uv run pyright`: 0 errors.
+
+### Live three-node run and release gate
+
+Authoritative project: `projects/mixed-forecast-plan-sim-20261116d-20261116-828a5b`.
+
+- Real DeepSeek Problem Analyst/Router and real Snakemake, CBC, MLflow, validation, and
+  evidence execution.
+- Plan `plan-b031a5dd1eaa`, hash `a5aad5c12219e843557dc9c7b245658d8f3863564b7954fe577fc6ead1629a3e`.
+- Run `mixed-a5aad5c1-73b2e9`, status SUCCEEDED.
+- Forecast artifact `artifact-mixed-a5aad5c1-73b2e9-demand-forecast`, content hash
+  `1d735723db38f2c217a6c633961f62e8d2f4255a45ede32ffa9e7790719abfd2`.
+- Residual artifact `artifact-mixed-a5aad5c1-73b2e9-forecast-error`, content hash
+  `fe2c7c1015744377d5ea019f8b23d0e2f571761ca9be97e3f221ce2c088ffed7`;
+  12 historical rolling-origin rows, mean residual -1.267157, sample std 6.026062.
+- Plan artifact `artifact-mixed-a5aad5c1-73b2e9-production-plan`, content hash
+  `766e9e1dd46b40bcd0821a860a73a4fe40fd6c0a25007b4dfb07969c6abf5557`;
+  production 158/140/152, inventory 10/0/0, objective 5420, feasible.
+- Experiments: `exp-plan-b031a5dd1eaa-forecast`, `…-optimization`, `…-simulation`.
+- Simulation: 500 replications, seed hash
+  `e183867d704b29e4e2e2ae5fdb8380393d719b16afd3fa545f79915410f84f19`, 430 distinct
+  residual paths, zero demand-floor activations. Diagnostic mean total shortage 3.444971,
+  median 0, p95 14; mean fill rate 0.992476; any-shortage fraction 0.48. These are
+  in-sample residual-resampling diagnostics, not deployed-forecast risk estimates.
+- Evidence: `verified/mixed/mixed-a5aad5c1-73b2e9.json`; bundle:
+  `paper/evidence_bundle/`.
+- Project state: **REQUIRES_HUMAN_REVIEW** (resume `RED_TEAM_REVIEW`). **No release was
+  created.** The PASS-only gate was not lowered.
+
+The Red Team repeatedly blocked release after the live run. Its final rounds focused on
+external validity: the residual pool is in-sample with respect to the deployed forecast,
+the plan is driven by an arbitrary fixed-anchor/window choice, no comparator plan or
+fault-injection control was run, and no pool-level bootstrap or held-out fold exists. The
+paper and bundle were tightened substantially (explicit in-sample labels, window/slope
+sensitivity tables, centered-pool and mechanical-fill diagnostics, provenance
+limitations, 3-decimal precision), but the remaining critiques are genuine study-design
+limits, not typing errors. Per the project rule, the pipeline stops for human review rather
+than lowering the scientific gate.
+
+### Bug fixes in scope
+
+The three-node live run and tests exposed and fixed: missing-input guards for optimization
+and simulation artifacts, a validator that assumed node order instead of the forecasting
+node by family, and test construction errors around artifact content hashes when asserting
+unit/timestamp mismatches. No re-optimization path was introduced.
+
+### Limitations
+
+- One hand-built synthetic instance; no demand/cost/capacity sweep, no comparator plan,
+  no mode/fault-injection test, and no robust/stochastic optimization.
+- Residual resampling is historical and in-sample with respect to the deployed forecast;
+  iid drawing discards fold/time dependence and the nonzero pool mean biases simulated
+  demand low. No pool bootstrap, centered rerun, or held-out fold is included in the
+  frozen result (the paper derives a centered-pool arithmetic diagnostic from the same
+  draws).
+- The plan's pre-build and production-at-capacity equality are conditional on the
+  fixed-anchor window and are not evidence of capacity enforcement.
+- The simulation outcome is a single-plan diagnostic; fill rate has no evaluator scale.
+- No external third-party reproduction was performed; hashes are internal provenance.
+
 ## Limitations / not done
 
 - 24 synthetic routing cases; three per family, not a universal routing taxonomy.
@@ -292,8 +410,8 @@ Project: `projects/mixed-forecast-plan-20261116c-20261116-7a954e`.
 - ProblemSpec is analyzed once and reused across the two signal/routing passes.
 - LLM behavior can drift across models/versions; stability is demonstrated for two runs
   with the recorded configuration, not guaranteed.
-- Phase 21.2 executes only the forecasting -> optimization path. Simulation-aware or
-  multi-node mixed DAGs remain future work.
+- Phase 21.3 executes only forecasting -> optimization -> simulation. Arbitrary,
+  branching, parallel, or longer mixed DAGs remain out of scope and were not started.
 - No automatic `mmos solve`, competition paper agent, router council, embedding
   classifier, or external model training.
 - Routing artifacts are control-plane and are not frozen scientific evidence.

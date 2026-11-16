@@ -102,6 +102,21 @@ def _seed_hash(schedule: list[dict[str, int]]) -> str:
     return hashlib.sha256(encoded.encode()).hexdigest()
 
 
+def derive_seed_schedule(master_seed: int, replications: int) -> list[dict[str, int]]:
+    """Public deterministic seed schedule shared by formal simulation experiments."""
+    return _seed_schedule(master_seed, replications)
+
+
+def seed_schedule_hash(schedule: list[dict[str, int]]) -> str:
+    return _seed_hash(schedule)
+
+
+def confidence_interval(
+    values: list[float], confidence_level: float
+) -> tuple[float, float]:
+    return _confidence_interval(values, confidence_level)
+
+
 class _MM1Run:
     def __init__(
         self,
@@ -412,5 +427,8 @@ __all__ = [
     "_confidence_interval",
     "_seed_schedule",
     "build_simulation_record",
+    "confidence_interval",
+    "derive_seed_schedule",
     "run_simulation",
+    "seed_schedule_hash",
 ]

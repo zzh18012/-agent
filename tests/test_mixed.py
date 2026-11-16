@@ -414,7 +414,7 @@ def test_missing_invalid_artifact_blocks_downstream(tmp_path: Path) -> None:
         problem_hash="a" * 64,
         problem_spec_hash="b" * 64,
         routing_id="route-blocked",
-        nodes=planned_nodes(TaskFamily.SIMULATION),
+        nodes=planned_nodes(TaskFamily.GRAPH),
         edges=[edge],
         entry_nodes=["forecast_node"],
         terminal_nodes=["optimization_node"],

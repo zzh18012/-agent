@@ -28,6 +28,12 @@ from mmos.mixed.plan import (
     load_mixed_plan,
     save_mixed_plan,
 )
+from mmos.mixed.simulation import (
+    load_mixed_simulation_result,
+    mixed_simulation_record_file,
+    mixed_simulation_result_file,
+    mixed_simulation_spec_file,
+)
 from mmos.mixed.validation import run_record_path, validate_mixed_experiment
 from mmos.orchestration import Orchestrator
 from mmos.paper.mixed_builder import build_mixed_paper
@@ -83,6 +89,14 @@ class MixedRunSummary:
     optimization_experiment_id: str
     forecast_artifact_id: str
     forecast_artifact_hash: str
+    forecast_error_artifact_id: str | None
+    forecast_error_artifact_hash: str | None
+    production_plan_artifact_id: str | None
+    production_plan_artifact_hash: str | None
+    simulation_experiment_id: str | None
+    simulation_replications: int | None
+    shortage_summary: dict[str, str]
+    service_summary: dict[str, str]
     objective: float | None
     feasible: bool
     validation: dict[str, str]
@@ -203,14 +217,42 @@ def _register_claim(paths: ProjectPaths, plan: MixedExecutionPlan, record: DAGRu
     objective = (
         f"{record.final_objective:.6f}" if record.final_objective is not None else "unavailable"
     )
+    statement = (
+        f"Under the frozen mixed plan {plan.plan_id} and the verified demand forecast "
+        f"artifact {record.forecast_artifact_id}, the production plan reported feasible "
+        f"with objective value {objective}; it is conditional on deterministic point "
+        "forecasts and does not represent an optimal future production plan."
+    )
+    if plan.has_simulation_node():
+        evidence_ids.extend(
+            [
+                f"ev-mixed-{record.run_id}-production-plan-id",
+                f"ev-mixed-{record.run_id}-production-plan-hash",
+                f"ev-mixed-{record.run_id}-forecast-error-id",
+                f"ev-mixed-{record.run_id}-forecast-error-hash",
+                f"ev-mixed-{record.run_id}-forecast-error-source",
+                f"ev-mixed-{record.run_id}-forecast-error-samples",
+                f"ev-mixed-{record.run_id}-simulation-experiment",
+                f"ev-mixed-{record.run_id}-simulation-seed-hash",
+                f"ev-mixed-{record.run_id}-simulation-replications",
+                f"ev-mixed-{record.run_id}-simulation-shortage",
+                f"ev-mixed-{record.run_id}-simulation-fill-rate",
+                f"ev-mixed-{record.run_id}-simulation-any-shortage",
+                f"ev-mixed-{record.run_id}-simulation-distinct-paths",
+                f"ev-mixed-{record.run_id}-simulation-floor-activations",
+            ]
+        )
+        statement += (
+            " Under the frozen empirical iid out-of-sample residual resampling protocol, "
+            f"{record.simulation_replications} replications produced mean total shortage "
+            f"{record.shortage_summary.get('mean_total_shortage', 'unavailable')} and mean "
+            f"fill rate {record.service_summary.get('mean_fill_rate', 'unavailable')}. "
+            "This is a conditional-simulation description, not a robustness guarantee or a "
+            "claim about the true future demand distribution."
+        )
     return add_claim(
         paths,
-        statement=(
-            f"Under the frozen mixed plan {plan.plan_id} and the verified demand forecast "
-            f"artifact {record.forecast_artifact_id}, the production plan reported feasible "
-            f"with objective value {objective}; it is conditional on deterministic point "
-            "forecasts and does not represent an optimal future production plan."
-        ),
+        statement=statement,
         evidence_ids=evidence_ids,
         claim_id=f"claim-mixed-{record.run_id}",
         accept=False,
@@ -236,6 +278,13 @@ def _write_release(
         raise MixedPipelineError("mixed run has no optimization experiment")
     optimization_spec = load_optimization_spec(paths, record.optimization_experiment_id)
     result = load_optimization_result(paths, record.optimization_experiment_id)
+    simulation_result = None
+    if plan.has_simulation_node():
+        if record.simulation_experiment_id is None:
+            raise MixedPipelineError("mixed run has no simulation experiment")
+        simulation_result = load_mixed_simulation_result(
+            paths, record.simulation_experiment_id
+        )
     payload = {
         "project_id": paths.root.name,
         "task_family": "mixed",
@@ -247,7 +296,19 @@ def _write_release(
         "forecast_artifact_id": record.forecast_artifact_id,
         "forecast_artifact_hash": envelope_hash,
         "forecast_experiment_id": artifact.forecast_experiment_id,
+        "forecast_error_artifact_id": record.forecast_error_artifact_id,
+        "forecast_error_artifact_hash": record.forecast_error_artifact_hash,
+        "production_plan_artifact_id": record.production_plan_artifact_id,
+        "production_plan_artifact_hash": record.production_plan_artifact_hash,
         "optimization_experiment_id": record.optimization_experiment_id,
+        "simulation_experiment_id": record.simulation_experiment_id,
+        "simulation_replications": record.simulation_replications,
+        "simulation_seed_hash": simulation_result.replication_seed_hash
+        if simulation_result is not None
+        else None,
+        "shortage_summary": record.shortage_summary,
+        "service_summary": record.service_summary,
+        "contract_chain_complete": record.contract_chain_complete,
         "instance_hash": optimization_spec.instance_hash,
         "dataset_hash": artifact.source_dataset_hash,
         "objective_value": objective,
@@ -280,17 +341,28 @@ def _write_release(
         f"- Forecast artifact: `{record.forecast_artifact_id}` "
         f"(`{envelope_hash}`)\n"
         f"- Forecast experiment: `{artifact.forecast_experiment_id}`\n"
+        f"- Forecast-error artifact: `{record.forecast_error_artifact_id or 'none'}` "
+        f"(`{record.forecast_error_artifact_hash or 'none'}`)\n"
         f"- Optimization experiment: `{record.optimization_experiment_id}`\n"
+        f"- Production plan artifact: `{record.production_plan_artifact_id or 'none'}` "
+        f"(`{record.production_plan_artifact_hash or 'none'}`)\n"
         f"- Objective: {objective if objective is not None else 'unavailable'} "
         f"(feasible: {feasible})\n"
+        f"- Simulation experiment: `{record.simulation_experiment_id or 'none'}`\n"
+        f"- Simulation replications: {record.simulation_replications or 'none'}\n"
+        f"- Simulation seed hash: "
+        f"`{simulation_result.replication_seed_hash if simulation_result else 'none'}`\n"
+        f"- Shortage summary: {record.shortage_summary}\n"
+        f"- Service summary: {record.service_summary}\n"
         f"- Dependency contract: "
         f"`{record.dependency_validation.get('status', 'missing')}`\n"
         f"- Validation: {validation}\n"
         f"- Red team: `{review.judge.overall.value}`\n"
         f"- Claim: `{claim_id or 'none'}`\n"
         f"- Paper: `{paper_path.relative_to(paths.root).as_posix()}`\n\n"
-        "Point forecasts only: demand uncertainty is not propagated; this release does "
-        "not claim an optimal future production plan.\n",
+        "The plan is the deterministic point-forecast plan. The simulation is a "
+        "conditional evaluation using frozen rolling-origin residuals; it is not "
+        "re-optimized, robust, or a guarantee about future demand.\n",
     )
     return release_md
 
@@ -356,6 +428,14 @@ def _finish(
         optimization_experiment_id=record.optimization_experiment_id or "",
         forecast_artifact_id=record.forecast_artifact_id or "",
         forecast_artifact_hash=envelope_hash,
+        forecast_error_artifact_id=record.forecast_error_artifact_id,
+        forecast_error_artifact_hash=record.forecast_error_artifact_hash,
+        production_plan_artifact_id=record.production_plan_artifact_id,
+        production_plan_artifact_hash=record.production_plan_artifact_hash,
+        simulation_experiment_id=record.simulation_experiment_id,
+        simulation_replications=record.simulation_replications,
+        shortage_summary=record.shortage_summary,
+        service_summary=record.service_summary,
         objective=objective,
         feasible=feasible,
         validation=validation,
@@ -402,7 +482,7 @@ def _evidence_changed(
     if not envelope_path.exists():
         return True
     envelope = load_envelope(envelope_path)
-    return (
+    changed = (
         provenance.get("plan_hash") != plan.plan_hash
         or provenance.get("forecast_envelope_sha256") != sha256_file(envelope_path)
         or provenance.get("forecast_payload_sha256")
@@ -421,6 +501,43 @@ def _evidence_changed(
         )
         or provenance.get("optimization_record_sha256")
         != sha256_file(experiment_record_file(paths, record.optimization_experiment_id))
+    )
+    if changed or not plan.has_simulation_node():
+        return changed
+    simulation_id = record.simulation_experiment_id
+    if simulation_id is None:
+        return True
+    artifacts = paths.mixed_dir / "runs" / run_id / "artifacts"
+    plan_envelope_path = artifacts / "production_plan_envelope.json"
+    error_envelope_path = artifacts / "forecast_error_envelope.json"
+    if not plan_envelope_path.exists() or not error_envelope_path.exists():
+        return True
+    plan_envelope = load_envelope(plan_envelope_path)
+    error_envelope = load_envelope(error_envelope_path)
+    return (
+        provenance.get("production_plan_artifact_id") != plan_envelope.artifact_id
+        or provenance.get("production_plan_artifact_hash")
+        != plan_envelope.content_hash
+        or provenance.get("production_plan_envelope_sha256")
+        != sha256_file(plan_envelope_path)
+        or provenance.get("production_plan_payload_sha256")
+        != sha256_file(paths.root / plan_envelope.payload_path)
+        or provenance.get("forecast_error_artifact_id") != error_envelope.artifact_id
+        or provenance.get("forecast_error_artifact_hash")
+        != error_envelope.content_hash
+        or provenance.get("forecast_error_envelope_sha256")
+        != sha256_file(error_envelope_path)
+        or provenance.get("forecast_error_payload_sha256")
+        != sha256_file(paths.root / error_envelope.payload_path)
+        or provenance.get("simulation_experiment_id") != simulation_id
+        or provenance.get("simulation_spec_sha256")
+        != sha256_file(mixed_simulation_spec_file(paths, simulation_id))
+        or provenance.get("simulation_result_sha256")
+        != sha256_file(mixed_simulation_result_file(paths, simulation_id))
+        or provenance.get("simulation_record_sha256")
+        != sha256_file(mixed_simulation_record_file(paths, simulation_id))
+        or record.production_plan_artifact_id != plan_envelope.artifact_id
+        or record.forecast_error_artifact_id != error_envelope.artifact_id
     )
 
 

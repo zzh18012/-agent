@@ -1,7 +1,10 @@
 import hashlib
 import json
+import math
+import statistics
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import Field, model_validator
 
@@ -48,6 +51,13 @@ class MixedSpec(MMOSModel):
     holding_costs: list[float] = Field(min_length=1)
     initial_inventory: float = Field(default=0.0, ge=0)
     solver_time_limit_seconds: float = Field(default=10.0, gt=0)
+    simulation_replications: int | None = Field(default=None, ge=2)
+    simulation_master_seed: int = Field(default=0, ge=0)
+    residual_sampling_method: Literal["empirical_iid_bootstrap"] = (
+        "empirical_iid_bootstrap"
+    )
+    demand_floor_policy: Literal["max_zero"] = "max_zero"
+    confidence_level: float = Field(default=0.95, gt=0.5, lt=1.0)
     spec_hash: str = ""
 
     @model_validator(mode="after")
@@ -145,6 +155,11 @@ class MixedExecutionPlan(MMOSModel):
     def with_hash(self) -> "MixedExecutionPlan":
         return self.model_copy(update={"plan_hash": self.computed_hash()})
 
+    def has_simulation_node(self) -> bool:
+        return any(
+            node.task_family is TaskFamily.SIMULATION for node in self.nodes
+        )
+
     def topological_order(self) -> list[str]:
         incoming = {node.node_id: 0 for node in self.nodes}
         outgoing: dict[str, list[str]] = {node.node_id: [] for node in self.nodes}
@@ -222,6 +237,136 @@ class ArtifactContract(MMOSModel):
     timestamps: list[str]
 
 
+class ProductionPlanArtifact(MMOSModel):
+    planning_horizon: int = Field(ge=1)
+    timestamps: list[str] = Field(min_length=1)
+    unit: str
+    production: list[float] = Field(min_length=1)
+    planned_inventory: list[float] = Field(min_length=1)
+    capacity: list[float] = Field(min_length=1)
+    objective_value: float
+    forecast_artifact_id: str
+    forecast_artifact_hash: str
+    optimization_experiment_id: str
+    validation_status: str = "verified"
+
+    @model_validator(mode="after")
+    def _shape(self) -> "ProductionPlanArtifact":
+        if not (
+            len(self.timestamps)
+            == len(self.production)
+            == len(self.planned_inventory)
+            == len(self.capacity)
+            == self.planning_horizon
+        ):
+            raise ValueError(
+                "plan horizon, timestamps, production, inventory, and capacity must match"
+            )
+        if self.validation_status != "verified":
+            raise ValueError("only verified production plans may be published")
+        if not self.unit:
+            raise ValueError("unit is required")
+        for index in range(self.planning_horizon):
+            if not (
+                math.isfinite(self.production[index])
+                and math.isfinite(self.planned_inventory[index])
+                and math.isfinite(self.capacity[index])
+            ):
+                raise ValueError("plan values must be finite")
+            if self.production[index] < -1e-9:
+                raise ValueError("production must be nonnegative")
+            if self.planned_inventory[index] < -1e-9:
+                raise ValueError("planned inventory must be nonnegative")
+            if self.production[index] > self.capacity[index] + 1e-6:
+                raise ValueError("production exceeds capacity")
+        return self
+
+    def computed_content_hash(self) -> str:
+        encoded = json.dumps(
+            self.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+        )
+        return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+class ForecastResidual(MMOSModel):
+    fold_id: int = Field(ge=0)
+    row_index: int = Field(ge=0)
+    timestamp: str
+    actual: float
+    forecast: float
+    residual: float
+
+    @model_validator(mode="after")
+    def _direction(self) -> "ForecastResidual":
+        if not all(
+            math.isfinite(value)
+            for value in (self.actual, self.forecast, self.residual)
+        ):
+            raise ValueError("residual values must be finite")
+        if abs(self.residual - (self.actual - self.forecast)) > 1e-9:
+            raise ValueError("residual must equal actual - forecast")
+        return self
+
+
+class ForecastErrorArtifact(MMOSModel):
+    forecast_horizon: int = Field(ge=1)
+    unit: str
+    source_forecast_experiment_id: str
+    source_forecast_artifact_id: str
+    source_forecast_artifact_hash: str
+    residual_definition: Literal["actual_minus_forecast"] = "actual_minus_forecast"
+    residual_source: Literal["rolling_origin_oof"] = "rolling_origin_oof"
+    residuals: list[ForecastResidual] = Field(min_length=1)
+    mean: float
+    std: float
+    std_definition: Literal["sample_std"] = "sample_std"
+    sample_count: int = Field(ge=1)
+    validation_status: str = "verified"
+
+    @model_validator(mode="after")
+    def _summary(self) -> "ForecastErrorArtifact":
+        if self.sample_count != len(self.residuals):
+            raise ValueError("sample_count must equal the residual count")
+        if self.validation_status != "verified":
+            raise ValueError("only verified forecast-error artifacts may be published")
+        if not self.unit:
+            raise ValueError("unit is required")
+        values = [item.residual for item in self.residuals]
+        if abs(self.mean - statistics.fmean(values)) > 1e-9:
+            raise ValueError("stored residual mean does not match the residual values")
+        expected_std = statistics.stdev(values) if len(values) > 1 else 0.0
+        if abs(self.std - expected_std) > 1e-9:
+            raise ValueError("stored residual std does not match the residual values")
+        return self
+
+    def computed_content_hash(self) -> str:
+        encoded = json.dumps(
+            self.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+        )
+        return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+class ProductionPlanContract(MMOSModel):
+    artifact_type: str = "production_plan"
+    schema_version: str = "1.0"
+    unit: str
+    horizon: int
+    timestamps: list[str]
+    forecast_artifact_id: str
+    forecast_artifact_hash: str
+
+
+class ForecastErrorContract(MMOSModel):
+    artifact_type: str = "forecast_error"
+    schema_version: str = "1.0"
+    unit: str
+    source_forecast_experiment_id: str
+    source_forecast_artifact_hash: str
+    residual_definition: Literal["actual_minus_forecast"] = "actual_minus_forecast"
+    residual_source: Literal["rolling_origin_oof"] = "rolling_origin_oof"
+    min_sample_count: int = Field(ge=1)
+
+
 class DAGRunRecord(MMOSModel):
     run_id: str
     plan_id: str
@@ -231,7 +376,16 @@ class DAGRunRecord(MMOSModel):
     nodes: list[TaskNode]
     forecast_artifact_id: str | None = None
     forecast_artifact_hash: str | None = None
+    forecast_error_artifact_id: str | None = None
+    forecast_error_artifact_hash: str | None = None
     optimization_experiment_id: str | None = None
+    production_plan_artifact_id: str | None = None
+    production_plan_artifact_hash: str | None = None
+    simulation_experiment_id: str | None = None
+    simulation_replications: int | None = None
+    shortage_summary: dict[str, str] = Field(default_factory=dict)
+    service_summary: dict[str, str] = Field(default_factory=dict)
+    contract_chain_complete: bool = False
     dependency_validation: dict[str, str] = Field(default_factory=dict)
     final_objective: float | None = None
     final_feasible: bool | None = None
@@ -248,8 +402,13 @@ __all__ = [
     "DAGRunRecord",
     "DAGStatus",
     "ForecastArtifact",
+    "ForecastErrorArtifact",
+    "ForecastErrorContract",
+    "ForecastResidual",
     "MixedExecutionPlan",
     "MixedSpec",
     "NodeStatus",
+    "ProductionPlanArtifact",
+    "ProductionPlanContract",
     "TaskNode",
 ]
