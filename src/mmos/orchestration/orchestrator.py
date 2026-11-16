@@ -37,7 +37,13 @@ class Orchestrator:
 
     def transition(self, target: ProjectState, *, reason: str) -> ProjectConfig:
         config = load_project_config(self.paths)
-        check_transition(config.state, target, config.resume_state, config.task)
+        check_transition(
+            config.state,
+            target,
+            config.resume_state,
+            config.task,
+            config.execution_mode,
+        )
 
         resume_state = config.state if target in ESCAPE_STATES else None
 
@@ -67,7 +73,7 @@ class Orchestrator:
         It never skips a state, never leaves an escape state, and never moves backwards.
         """
         config = load_project_config(self.paths)
-        order = task_order(config.task)
+        order = task_order(config.task, config.execution_mode)
         if config.state in ESCAPE_STATES or config.state not in order:
             raise ValueError(f"cannot advance from state {config.state.value}")
         if target not in order:
@@ -76,7 +82,9 @@ class Orchestrator:
             return config
 
         while config.state is not target:
-            next_state = task_transition_table(config.task).get(config.state)
+            next_state = task_transition_table(
+                config.task, config.execution_mode
+            ).get(config.state)
             if next_state is None:
                 raise ValueError(f"no path from {config.state.value} to {target.value}")
             config = self.transition(next_state, reason=reason)

@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from mmos.schemas.common import MMOSModel
-from mmos.schemas.states import ESCAPE_STATES, ProjectState, TaskFamily
+from mmos.schemas.states import ESCAPE_STATES, ExecutionMode, ProjectState, TaskFamily
 
 
 class SourceRole(StrEnum):
@@ -36,6 +36,7 @@ class ProjectConfig(MMOSModel):
     created_at: datetime
     state: ProjectState = ProjectState.INIT
     task: TaskFamily = TaskFamily.PREDICTION
+    execution_mode: ExecutionMode = ExecutionMode.SINGLE_TASK
     resume_state: ProjectState | None = None
 
     @model_validator(mode="after")

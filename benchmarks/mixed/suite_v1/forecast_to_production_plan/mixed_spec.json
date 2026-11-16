@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "mixed_id": "forecast_to_production_plan",
+  "problem_id": "forecast-to-production-plan",
+  "target_column": "demand",
+  "time_column": "period",
+  "feature_set": [],
+  "forecast_horizon": 3,
+  "forecast_timestamps": ["2026-01", "2026-02", "2026-03"],
+  "forecast_model_id": "naive.drift",
+  "n_splits": 4,
+  "seasonal_period": null,
+  "unit": "units",
+  "random_seed": 0,
+  "planning_periods": ["2026-01", "2026-02", "2026-03"],
+  "capacities": [170.0, 140.0, 170.0],
+  "production_costs": [12.0, 12.0, 12.0],
+  "holding_costs": [2.0, 2.0, 2.0],
+  "initial_inventory": 0.0,
+  "solver_time_limit_seconds": 10.0
+}

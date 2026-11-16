@@ -197,4 +197,7 @@ class OptimizationExperimentRecord(MMOSModel):
     artifacts: list[str] = Field(default_factory=list)
     validation_status: dict[str, str] = Field(default_factory=dict)
     linked_experiment_ids: list[str] = Field(default_factory=list)
+    consumed_artifact_ids: list[str] = Field(default_factory=list)
+    consumed_artifact_hashes: list[str] = Field(default_factory=list)
+    dependency_contract_status: str | None = None
     notes: list[str] = Field(default_factory=list)

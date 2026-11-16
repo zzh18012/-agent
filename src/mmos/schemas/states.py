@@ -22,6 +22,11 @@ SUPPORTED_TASKS = frozenset(
 )
 
 
+class ExecutionMode(StrEnum):
+    SINGLE_TASK = "single_task"
+    MULTI_TASK = "multi_task"
+
+
 class ProjectState(StrEnum):
     INIT = "INIT"
     PROJECT_INGESTED = "PROJECT_INGESTED"

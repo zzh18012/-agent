@@ -81,6 +81,13 @@ from mmos.graph_pipeline import (
     GraphPipelineOptions,
     run_graph_pipeline,
 )
+from mmos.mixed_pipeline import (
+    MixedPipelineBlocked,
+    MixedPipelineError,
+    MixedPlanOptions,
+    plan_mixed_project,
+    run_mixed_project,
+)
 from mmos.multi_objective_pipeline import (
     MultiObjectivePipelineBlocked,
     MultiObjectivePipelineOptions,
@@ -108,7 +115,13 @@ from mmos.schemas.optimization import (
 )
 from mmos.schemas.project import SourceRole
 from mmos.schemas.proposal import CritiqueReport
-from mmos.schemas.states import ESCAPE_STATES, SUPPORTED_TASKS, ProjectState, TaskFamily
+from mmos.schemas.states import (
+    ESCAPE_STATES,
+    SUPPORTED_TASKS,
+    ExecutionMode,
+    ProjectState,
+    TaskFamily,
+)
 from mmos.simulation_pipeline import (
     SimulationPipelineBlocked,
     SimulationPipelineOptions,
@@ -209,6 +222,10 @@ def init(
             ),
         ),
     ] = TaskFamily.PREDICTION,
+    mode: Annotated[
+        ExecutionMode,
+        typer.Option("--mode", help="Execution mode: single_task | multi_task."),
+    ] = ExecutionMode.SINGLE_TASK,
     projects_dir: Annotated[
         Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
     ] = None,
@@ -217,7 +234,9 @@ def init(
     if task not in SUPPORTED_TASKS:
         console.print(f"Error: task family {task.value!r} is not implemented.", style="red")
         raise typer.Exit(code=1)
-    paths, config = create_project(_projects_base(projects_dir), name, task=task)
+    paths, config = create_project(
+        _projects_base(projects_dir), name, task=task, execution_mode=mode
+    )
     console.print(f"Created project [bold]{config.project_id}[/bold]")
     console.print(f"Location: {paths.root}")
     console.print(f"Task: {config.task.value}")
@@ -272,7 +291,13 @@ def status(
         table.add_row(f"  {role.value}", str(role_counts.get(role.value, 0)))
     next_states = ", ".join(
         sorted(
-            state.value for state in allowed_targets(config.state, config.resume_state, config.task)
+            state.value
+            for state in allowed_targets(
+                config.state,
+                config.resume_state,
+                config.task,
+                config.execution_mode,
+            )
         )
     )
     table.add_row("Allowed next", next_states or "none")
@@ -1716,6 +1741,72 @@ def benchmark_knapsack(
     )
     console.print(f"Validation: {summary.validation}")
     console.print(f"Proposed claims: {', '.join(summary.claim_ids) or 'none'}")
+    console.print(f"Red team: {summary.red_team_overall}")
+    console.print(f"Project state: {summary.state.value}")
+    console.print(f"Paper: {summary.paper_path}")
+    console.print(f"Release: {summary.release_path}")
+
+
+@app.command(name="mixed-plan")
+def mixed_plan(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    spec_file: Annotated[Path, typer.Argument(help="MixedSpec JSON file.")],
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Route a multi-task problem and freeze a mixed execution plan."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    options = MixedPlanOptions(spec_file=spec_file)
+    try:
+        summary = plan_mixed_project(paths, options, _model_or_exit())
+    except (MixedPipelineError, RoutingError, FileNotFoundError) as exc:
+        console.print(f"Mixed plan failed: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"Plan: {summary.plan_id}")
+    console.print(f"Plan hash: {summary.plan_hash}")
+    console.print(f"Routing: {summary.status}")
+    console.print(f"Nodes: {summary.nodes}; edges: {summary.edges}")
+    console.print(f"Project state: {summary.state.value}")
+    console.print(
+        "Review the frozen plan, then run: mmos run-plan <project> (execution is explicit)"
+    )
+
+
+@app.command(name="run-plan")
+def run_plan(
+    project: Annotated[str, typer.Argument(help="Project id or directory.")],
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Execute the frozen mixed plan through the shared lifecycle."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    try:
+        summary = run_mixed_project(
+            paths,
+            lambda ast, run_id: RedTeam(_model_or_exit()).run(ast, experiment_id=run_id),
+        )
+    except MixedPipelineBlocked as exc:
+        console.print(f"Mixed plan blocked: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+    except (MixedPipelineError, ValueError, FileNotFoundError, EvidenceError, PaperError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"Run: {summary.run_id}")
+    console.print(f"Plan: {summary.plan_id} ({summary.plan_hash})")
+    console.print(f"Forecast artifact: {summary.forecast_artifact_id}")
+    console.print(f"Forecast experiment: {summary.forecast_experiment_id}")
+    console.print(f"Optimization experiment: {summary.optimization_experiment_id}")
+    console.print(
+        f"Objective: {summary.objective if summary.objective is not None else 'unavailable'}; "
+        f"feasible: {summary.feasible}"
+    )
+    console.print("Point forecasts only: demand uncertainty is not propagated.")
+    console.print(f"Validation: {summary.validation}")
+    console.print(f"Claim: {summary.claim_id or 'none'}")
     console.print(f"Red team: {summary.red_team_overall}")
     console.print(f"Project state: {summary.state.value}")
     console.print(f"Paper: {summary.paper_path}")

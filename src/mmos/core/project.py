@@ -39,7 +39,7 @@ from mmos.schemas.simulation import (
     SimulationResult,
     SimulationSpec,
 )
-from mmos.schemas.states import TaskFamily
+from mmos.schemas.states import ExecutionMode, TaskFamily
 from mmos.schemas.tournament import TournamentResult
 
 PROJECT_SUBDIRS: tuple[str, ...] = (
@@ -178,6 +178,10 @@ class ProjectPaths:
     @property
     def routing_dir(self) -> Path:
         return self.root / "routing"
+
+    @property
+    def mixed_dir(self) -> Path:
+        return self.root / "mixed"
 
 
 def current_git_commit() -> str:
@@ -659,6 +663,7 @@ def create_project(
     *,
     now: datetime | None = None,
     task: TaskFamily = TaskFamily.PREDICTION,
+    execution_mode: ExecutionMode = ExecutionMode.SINGLE_TASK,
 ) -> tuple[ProjectPaths, ProjectConfig]:
     created_at = now or datetime.now(UTC).replace(microsecond=0)
     projects_dir.mkdir(parents=True, exist_ok=True)
@@ -668,7 +673,13 @@ def create_project(
     for subdir in PROJECT_SUBDIRS:
         (paths.root / subdir).mkdir(parents=True, exist_ok=True)
 
-    config = ProjectConfig(project_id=paths.root.name, name=name, created_at=created_at, task=task)
+    config = ProjectConfig(
+        project_id=paths.root.name,
+        name=name,
+        created_at=created_at,
+        task=task,
+        execution_mode=execution_mode,
+    )
     save_project_config(paths, config)
     save_manifest(
         paths,

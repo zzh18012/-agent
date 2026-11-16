@@ -1,0 +1,29 @@
+{
+  "suite_id": "mixed-suite-v1",
+  "version": "1.0.0",
+  "cases": [
+    {
+      "case_id": "forecast_to_production_plan",
+      "problem_hash": "f5a40aafa7998e42d0874e2eec7d31092da0ee8eefac80ea21fbdf906e572ced",
+      "data_sha256": "01cab469a95b8a821350c5ec62c6b81badd4d1b701177ea3270e16b804f97bf7",
+      "spec_sha256": "fac4e9c8fea0e876840802895893835d90fb8f5e4f0636bfb9b254f4ed20bab5",
+      "expected_status": "MULTI_TASK",
+      "expected_tasks": [
+        "forecasting",
+        "optimization"
+      ],
+      "expected_dependency_hints": [
+        [
+          "forecasting",
+          "optimization"
+        ]
+      ],
+      "expected_horizon": 3,
+      "expected_planning_periods": [
+        "2026-01",
+        "2026-02",
+        "2026-03"
+      ]
+    }
+  ]
+}

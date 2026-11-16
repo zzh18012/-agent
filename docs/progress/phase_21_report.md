@@ -1,6 +1,6 @@
-# Phase 21 — Automatic Problem Router
+# Phase 21 — Automatic Problem Router and Mixed Modeling DAG
 
-Date: 2026-11-15
+Date: 2026-11-15 (21.1), 2026-11-16 (21.2)
 
 ## Goal
 
@@ -117,6 +117,174 @@ labels:
 6. deep RL policy training routed as optimization/simulation -> explicit unsupported
    paradigm.
 
+## 21.2 — Mixed Modeling DAG: Forecasting -> Optimization
+
+### Scope and architecture
+
+The first formal mixed vertical slice is exactly one path: a forecasting node produces a
+typed demand forecast artifact and an optimization node consumes it to solve a
+production-planning model. No new TaskFamily was added. MULTI_TASK is an execution mode:
+`ProjectConfig.execution_mode` defaults to `single_task`; `--mode multi_task` selects the
+shared optimization-style lifecycle (`PROBLEM_UNDERSTOOD -> PROTOTYPING -> PROTOTYPED ->
+EXPERIMENT_COMPLETED -> VALIDATING -> VERIFIED -> EVIDENCE_FROZEN -> PAPER_DRAFTED ->
+RED_TEAM_REVIEW -> READY_FOR_RELEASE -> RELEASED`). All existing experiment, validation,
+MLflow, evidence, paper, Red Team, and PASS-only release machinery is reused.
+
+### Formal schemas and planner
+
+`src/mmos/schemas/mixed.py` defines `NodeStatus`, `DAGStatus`, `MixedSpec`, `TaskNode`,
+`ArtifactEdge`, `MixedExecutionPlan`, `ArtifactEnvelope`, `ForecastArtifact`,
+`ArtifactContract`, and `DAGRunRecord`. `MixedSpec` enforces horizon = timestamps =
+planning periods, aligned costs/capacities, nonnegative values, and temporal-baseline
+only forecasts.
+
+`src/mmos/mixed/plan.py` requires a MULTI_TASK routing decision with exactly
+`{FORECASTING, OPTIMIZATION}`, a forecasting -> optimization dependency hint, and exactly
+one subproblem route per family. It builds `forecast_node` and `optimization_node` with one
+typed artifact edge, rejects cycles through Kahn topological order, and hashes the frozen
+plan. The live run exposed a real planning bug: the plan hash was computed before the final
+`plan_id` was assigned, so saved plans failed hash verification; the fix assigns the id
+first and then hashes the final content.
+
+### Typed artifacts and contract
+
+The forecast node publishes a `ForecastArtifact` with point forecasts, target, unit,
+timestamps, model id, source dataset hash, and producer experiment id. The envelope records
+artifact type/schema version, producer identity, payload hash, content hash, validation
+status, and provenance. The consumer accepts the artifact only after checking type,
+version, verified status, payload hash, content hash, experiment identity, target, unit,
+horizon, and timestamp alignment. Any mismatch raises `ArtifactContractError` and blocks
+the downstream node; there is no fallback path.
+
+The envelope provenance also records the exact history window length and a SHA-256 digest
+of the canonical `(period, demand)` pairs. The paper recomputes that digest from the
+displayed history and fails if it does not match.
+
+### Executor
+
+`src/mmos/mixed/executor.py` executes nodes in topological order and writes a
+`DAGRunRecord` after every state change. The forecasting node:
+
+- runs the data gate;
+- builds a rolling-origin `ExperimentSpec` with `naive.drift` and the `naive.last_value`
+  comparison baseline;
+- runs the existing Snakemake workflow and validators;
+- freezes forecast evidence;
+- builds the future point forecast from the full validated history.
+
+The optimization node re-verifies the artifact contract, builds a continuous
+inventory-balance production-planning model with per-period production and inventory,
+capacity upper bounds, and production + holding cost minimization, then reuses the
+OR-Tools CBC runner, optimization validator, MLflow logging, and evidence freeze. The
+optimization record stores consumed artifact ids/hashes and
+`dependency_contract_status="passed"`.
+
+Two executor bugs were found by the live run: `_update_node` accidentally applied the new
+status and experiment id to every node, and the validator assumed node order rather than
+looking up the forecasting node by family. Both were fixed; the run record now shows the
+forecast experiment only on the forecast node.
+
+Upstream failures, missing artifacts, and non-succeeded producers produce
+`BLOCKED_UPSTREAM`/`FAILED`/`BLOCKED` records. Successful runs with a changed forecast
+artifact hash mark earlier same-plan runs `STALE`.
+
+### Validation, evidence, and paper
+
+`src/mmos/mixed/validation.py` independently re-verifies the plan hash, DAG completion,
+artifact contract and hashes, upstream validation and frozen evidence, consumed artifact
+identity, optimization instance hash and status, every inventory-balance RHS against the
+artifact point forecasts, capacity/nonnegativity bounds, the objective value, and
+provenance completeness. The balance constraints must equal the artifact demand, which
+detects a silent fallback. The report is regenerated from frozen artifacts only.
+
+`src/mmos/evidence/mixed_store.py` writes mixed DAG evidence with plan, run, artifact,
+forecast-spec, optimization-spec/result/record hashes and artifact consumption fields. The
+paper builder emits a DAG figure, a forecast/capacity/production/inventory figure, input
+history, forecast, fold-derivation, window-sensitivity, parameter, plan, balance, and
+contract tables. It states that the forecast is a deterministic point forecast; that the
+plan is conditional on the frozen artifact; that production cost and holding cost rates
+apply per unit and per unit-period; that the validator is an internal arithmetic check;
+and that no uncertainty propagation, robust planning, or operational recommendation is
+claimed.
+
+### CLI and review resume
+
+- `mmos mixed-plan <project> <mixed_spec.json>` routes the problem with the real Router,
+  freezes the plan, and advances PROBLEM_UNDERSTOOD -> PROTOTYPING -> PROTOTYPED.
+- `mmos run-plan <project>` executes the frozen plan. There is no automatic
+  Router -> execution path and no `mmos solve`.
+- Review resume enters RED_TEAM_REVIEW, verifies the frozen evidence/artifact hashes and
+  current plan, re-runs validation without re-executing nodes, and rejects changed
+  evidence with REQUIRES_HUMAN_REVIEW.
+
+### Frozen suite
+
+`benchmarks/mixed/suite_v1/manifest.json` defines `mixed-suite-v1` with one case,
+`forecast_to_production_plan`: monthly demand (24 rows), forecast horizon 3
+(2026-01..03), `naive.drift`, 4 rolling-origin splits, unit `units`, capacities
+170/140/170, production cost 12, holding cost 2, initial inventory 0. The case expects a
+MULTI_TASK route with a forecasting -> optimization dependency. Manifest hashes cover the
+problem text, data, and spec.
+
+### Tests
+
+`tests/test_mixed.py` covers:
+
+1. `MixedSpec` horizon/timestamp/seasonal consistency rejection;
+2. MULTI_TASK routing requirement in the planner;
+3. topological order and cycle rejection before execution;
+4. artifact contract mismatches (horizon, timestamps, unit, target, payload mutation,
+   missing payload);
+5. missing/invalid upstream artifact -> BLOCKED_UPSTREAM with no downstream execution;
+6. MULTI_TASK lifecycle order;
+7. end-to-end pipeline with a FAIL review then PASS resume (asserts no node rerun,
+   forecast node experiment identity, inventory carry-over, evidence, claim, release);
+8. validator detecting demand/spec tampering (no fallback);
+9. resume rejecting changed evidence without re-executing nodes.
+
+### Live run
+
+Project: `projects/mixed-forecast-plan-20261116c-20261116-7a954e`.
+
+- Real DeepSeek Problem Analyst and Router: MULTI_TASK.
+- Plan: `plan-4b05fa090089`, hash
+  `656ff9cb6462f1c23a6c212dbf4bbaa678b3bbafca20b0d27deae54bc3bdaa16`.
+- Run: `mixed-656ff9cb-3d3219`; one DAG run only.
+- Forecast artifact: `artifact-mixed-656ff9cb-3d3219-demand-forecast`, content hash
+  `c184a004bef94731830ba5fa22740b34a23961cdd8a25c3f9108f839069a8bb0`.
+- Forecast points: 148, 150, 152 units.
+- Plan: production 158, 140, 152; ending inventory 10, 0, 0; objective 5420 (production
+  5400 + holding 20), feasible; CBC optimal, zero gap.
+- Validation: `mixed: passed`; evidence frozen; claim proposed (not accepted).
+- Red Team: PASS after seven blocked review cycles. The reviews drove real scientific tightening:
+  the first frozen instance made optimization a pass-through, so capacity 140 < 150 was
+  introduced to force carry-over; the paper then added forecast error metrics and a
+  baseline, explicit inventory recurrence, fold-level reconstruction with realized test
+  demand and MASE scales, window-length sensitivity, provenance digest distinctions,
+  constraint-enforcement and reproducibility scope limits, and figure annotations. Final
+  release: `releases/mixed_mixed-656ff9cb-3d3219.md`.
+
+### Limitations
+
+- One small synthetic instance; no demand, cost, or capacity sweep, and no negative
+  control (mutated artifact, schema bump, or infeasible companion solve).
+- The pre-build is forced by the hard demand equality and the capacity shortfall; it is a
+  feasibility identity, not a planning-mechanism result.
+- Deterministic point forecast only; no uncertainty propagation, stock-out, backorder, or
+  robust/stochastic planning.
+- The declared drift model is not shown to beat the last-value baseline; fold metrics are
+  not a forecasting evaluation.
+- The artifact hashes establish internal contract provenance; the raw CSV and evaluation
+  code are not attached, so external reproduction is not claimed.
+- Simulation-aware or multi-node mixed DAGs remain future work; no automatic `mmos solve`.
+
+### Verification
+
+- `uv run pytest tests/test_mixed.py`: 9 passed.
+- Full `uv run pytest`: passed.
+- `uv run ruff check .`: passed.
+- `uv run pyright`: 0 errors.
+
 ## Limitations / not done
 
 - 24 synthetic routing cases; three per family, not a universal routing taxonomy.
@@ -124,7 +292,8 @@ labels:
 - ProblemSpec is analyzed once and reused across the two signal/routing passes.
 - LLM behavior can drift across models/versions; stability is demonstrated for two runs
   with the recorded configuration, not guaranteed.
-- MULTI_TASK is detected but not executed; Mixed Modeling DAG remains Phase 21.2.
+- Phase 21.2 executes only the forecasting -> optimization path. Simulation-aware or
+  multi-node mixed DAGs remain future work.
 - No automatic `mmos solve`, competition paper agent, router council, embedding
   classifier, or external model training.
 - Routing artifacts are control-plane and are not frozen scientific evidence.
