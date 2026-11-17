@@ -516,16 +516,22 @@ class HistoricalBenchmarkHarness:
         target = self.root / "derived" / (source.name + ".txt")
         target.parent.mkdir(parents=True, exist_ok=True)
         if suffix == ".pdf":
-            result = subprocess.run(
-                ["pdftotext", "-layout", str(source), str(target)],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            if result.returncode != 0:
+            try:
+                import pymupdf
+            except ImportError as exc:
                 raise HistoricalBenchmarkError(
-                    f"pdftotext failed for {source.name}: {result.stderr}"
-                )
+                    "PyMuPDF is required for Unicode PDF extraction"
+                ) from exc
+            document = pymupdf.open(source)
+            try:
+                page_texts: list[str] = []
+                for page in document:
+                    extracted = page.get_text()
+                    page_texts.append(extracted if isinstance(extracted, str) else "")
+                text = "\n".join(page_texts)
+            finally:
+                document.close()
+            target.write_text(text, encoding="utf-8")
         elif suffix in {".docx", ".doc"}:
             result = subprocess.run(
                 ["pandoc", str(source), "-t", "plain", "-o", str(target)],

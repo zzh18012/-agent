@@ -160,6 +160,20 @@ def test_package_extraction_and_project_ingestion(tmp_path: Path) -> None:
     assert (paths.root / "problem").exists()
 
 
+def test_pdf_text_backend_extracts_unicode(tmp_path: Path) -> None:
+    import pymupdf
+
+    pdf = tmp_path / "statement.pdf"
+    document = pymupdf.open()
+    page = document.new_page()
+    page.insert_text((72, 72), "A problem statement")
+    document.save(pdf)
+    document.close()
+    h = harness(tmp_path)
+    derived = h._derive_text(pdf)
+    assert "A problem statement" in derived.read_text(encoding="utf-8")
+
+
 def test_requirement_mapping_from_problem_spec(tmp_path: Path) -> None:
     h = harness(tmp_path)
     spec = ProblemSpec(
