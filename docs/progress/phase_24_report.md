@@ -228,6 +228,6 @@ artifact immutability.
 - `ef184ab feat(phase-24.1): add historical blind benchmark harness`
 - `6716aa4 fix(phase-24.1): route reserve benchmark after infrastructure invalidation`
 - `8564092 fix(phase-24.1): preserve Unicode problem text with PDF backend`
-- Final documentation commit: `docs(phase-24.1): record historical blind benchmark`
+- `07ab08d feat(phase-24.1): add historical blind benchmark` (progress report)
 
 No push. Stop after Phase 24.1; do not start Phase 24.2.
