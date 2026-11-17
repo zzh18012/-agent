@@ -32,3 +32,4 @@ routing_benchmark/runs/
 benchmarks/historical/*/
 benchmarks/sources/*/
 benchmarks/remediation/
+benchmarks/burn_registry.json
