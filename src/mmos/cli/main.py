@@ -44,6 +44,14 @@ from mmos.competition.augmentation import (
     resume_augmentation,
     run_augmentation,
 )
+from mmos.competition.clock import SystemClock
+from mmos.competition.controller import (
+    CompetitionController,
+    CompetitionControllerError,
+    ControllerBlocked,
+    load_blocked_fixture,
+)
+from mmos.competition.controller_schemas import CompetitionTimingProfile
 from mmos.competition_pipeline import (
     CompetitionPaperBlocked,
     CompetitionPaperError,
@@ -181,6 +189,12 @@ app = typer.Typer(
     help="MathModelingOS — evidence-driven mathematical modeling automation.",
     no_args_is_help=True,
 )
+competition_app = typer.Typer(
+    name="competition",
+    help="Competition controller commands (post-release, deadline aware).",
+    no_args_is_help=True,
+)
+app.add_typer(competition_app, name="competition")
 
 
 @app.callback()
@@ -1962,3 +1976,224 @@ def competition_augment(
     console.print(f"New release: {summary.run.new_release_path}")
     if summary.run.new_paper_error:
         console.print(f"Paper error: {summary.run.new_paper_error}", style="red")
+
+
+def _controller_or_exit(
+    project: str, run_id: str, projects_dir: Path | None
+) -> CompetitionController:
+    paths = resolve_project(project, _projects_base(projects_dir))
+    try:
+        return CompetitionController.load(paths, run_id, clock=SystemClock())
+    except (CompetitionControllerError, ControllerBlocked, ValueError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+
+@competition_app.command("init-controller")
+def competition_init_controller(
+    project: Annotated[str, typer.Argument(help="Released project id or directory.")],
+    source_run: Annotated[
+        str, typer.Option("--source-run", help="Blocked competition paper run id.")
+    ],
+    profile_file: Annotated[
+        Path, typer.Option("--profile", help="Competition timing profile JSON.")
+    ],
+    run_id: Annotated[
+        str | None, typer.Option("--run-id", help="Explicit controller run id.")
+    ] = None,
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Create a deadline-aware competition controller run from a blocked paper."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    try:
+        profile = CompetitionTimingProfile.model_validate_json(
+            profile_file.read_text(encoding="utf-8")
+        )
+        fixture = load_blocked_fixture(paths, source_run)
+        controller = CompetitionController.initialize(
+            paths,
+            profile,
+            fixture,
+            clock=SystemClock(),
+            run_id=run_id,
+        )
+    except (CompetitionControllerError, ControllerBlocked, ValueError, OSError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+    console.print(f"Competition controller: {controller.run.competition_run_id}")
+    console.print(f"Profile: {profile.profile_id} ({profile.timezone})")
+    console.print(f"State: {controller.run.state.value}")
+    console.print(f"Source paper run: {source_run}")
+    console.print(f"Work items: {len(fixture.items)}")
+
+
+@competition_app.command("status")
+def competition_status(
+    project: Annotated[str, typer.Argument(help="Released project id or directory.")],
+    run_id: Annotated[str, typer.Option("--run-id", help="Controller run id.")],
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Read-only controller status; never mutates formal competition artifacts."""
+    controller = _controller_or_exit(project, run_id, projects_dir)
+    status = controller.status()
+    console.print(f"Competition controller: {status['competition_run_id']}")
+    console.print(f"State: {status['state']}")
+    console.print(f"Judge: {status['judge_status']}")
+    console.print(f"Work stopped: {status['work_stopped']}")
+    console.print(f"Scientific gate failed: {status['scientific_gate_failed']}")
+    console.print(f"Deadline expired: {status['deadline_expired']}")
+    queue = status["queue"]
+    assert isinstance(queue, dict)
+    console.print(f"Queue counts: {queue['counts']}")
+    console.print(f"Model freeze: {status['model_freeze_id']}")
+    console.print(f"Evidence freeze: {status['evidence_freeze_id']}")
+    console.print(f"Paper freeze: {status['paper_freeze_id']}")
+
+
+@competition_app.command("queue")
+def competition_queue(
+    project: Annotated[str, typer.Argument(help="Released project id or directory.")],
+    run_id: Annotated[str, typer.Option("--run-id", help="Controller run id.")],
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Print the deterministic work queue without advancing time."""
+    controller = _controller_or_exit(project, run_id, projects_dir)
+    queue = controller.evaluate_queue(SystemClock().now())
+    console.print(f"State: {queue.state.value}")
+    console.print(f"Counts: {queue.counts}")
+    table = Table(title="Competition work queue")
+    table.add_column("#")
+    table.add_column("Work item")
+    table.add_column("Status")
+    table.add_column("Reason")
+    for index, entry in enumerate(queue.ordered_work_items, start=1):
+        table.add_row(
+            str(index),
+            entry.work_item_id,
+            entry.status.value,
+            entry.decision.reason_code,
+        )
+    console.print(table)
+
+
+@competition_app.command("tick")
+def competition_tick(
+    project: Annotated[str, typer.Argument(help="Released project id or directory.")],
+    run_id: Annotated[str, typer.Option("--run-id", help="Controller run id.")],
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Advance controller milestones using the real system clock."""
+    controller = _controller_or_exit(project, run_id, projects_dir)
+    try:
+        queue = controller.tick()
+    except (CompetitionControllerError, ControllerBlocked) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+    console.print(f"State: {controller.run.state.value}")
+    console.print(f"Counts: {queue.counts}")
+    console.print(f"Work stopped: {controller.run.work_stopped}")
+    console.print(f"Scientific gate failed: {controller.run.scientific_gate_failed}")
+
+
+def _freeze_controller(
+    project: str,
+    run_id: str,
+    projects_dir: Path | None,
+    freeze: str,
+    revision: int | None,
+    reason: str | None,
+) -> None:
+    controller = _controller_or_exit(project, run_id, projects_dir)
+    try:
+        if freeze == "model":
+            record = controller.freeze_model(revision=revision, reason=reason)
+        elif freeze == "evidence":
+            record = controller.freeze_evidence(revision=revision, reason=reason)
+        else:
+            record = controller.freeze_paper(revision=revision, reason=reason)
+    except (CompetitionControllerError, ControllerBlocked) as exc:
+        console.print(f"Blocked: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+    console.print(f"{freeze.capitalize()} freeze: {record.freeze_id}")
+    console.print(f"Hash: {record.freeze_hash}")
+
+
+@competition_app.command("freeze-model")
+def competition_freeze_model(
+    project: Annotated[str, typer.Argument(help="Released project id or directory.")],
+    run_id: Annotated[str, typer.Option("--run-id", help="Controller run id.")],
+    revision: Annotated[
+        int | None, typer.Option("--revision", help="Explicit freeze revision.")
+    ] = None,
+    reason: Annotated[
+        str | None, typer.Option("--reason", help="Required for a revision.")
+    ] = None,
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Create or return the immutable model freeze record."""
+    _freeze_controller(project, run_id, projects_dir, "model", revision, reason)
+
+
+@competition_app.command("freeze-evidence")
+def competition_freeze_evidence(
+    project: Annotated[str, typer.Argument(help="Released project id or directory.")],
+    run_id: Annotated[str, typer.Option("--run-id", help="Controller run id.")],
+    revision: Annotated[
+        int | None, typer.Option("--revision", help="Explicit freeze revision.")
+    ] = None,
+    reason: Annotated[
+        str | None, typer.Option("--reason", help="Required for a revision.")
+    ] = None,
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Create or return the immutable evidence freeze record."""
+    _freeze_controller(project, run_id, projects_dir, "evidence", revision, reason)
+
+
+@competition_app.command("freeze-paper")
+def competition_freeze_paper(
+    project: Annotated[str, typer.Argument(help="Released project id or directory.")],
+    run_id: Annotated[str, typer.Option("--run-id", help="Controller run id.")],
+    revision: Annotated[
+        int | None, typer.Option("--revision", help="Explicit freeze revision.")
+    ] = None,
+    reason: Annotated[
+        str | None, typer.Option("--reason", help="Required for a revision.")
+    ] = None,
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Create or return the immutable paper freeze record."""
+    _freeze_controller(project, run_id, projects_dir, "paper", revision, reason)
+
+
+@competition_app.command("checkpoint")
+def competition_checkpoint(
+    project: Annotated[str, typer.Argument(help="Released project id or directory.")],
+    run_id: Annotated[str, typer.Option("--run-id", help="Controller run id.")],
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Write a deterministic checkpoint of the controller state."""
+    controller = _controller_or_exit(project, run_id, projects_dir)
+    try:
+        checkpoint = controller.checkpoint()
+    except (CompetitionControllerError, ControllerBlocked) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+    console.print(f"Checkpoint: {checkpoint.checkpoint_id}")
+    console.print(f"Hash: {checkpoint.checkpoint_hash}")
