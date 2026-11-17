@@ -168,12 +168,68 @@ class BenchmarkBlindnessAudit(MMOSModel):
 class CapabilityGap(MMOSModel):
     gap_id: str
     problem_requirement: str
+    requirement_ids: list[str] = Field(default_factory=list)
     failure_mode: str
     existing_capability_attempted: str
     why_insufficient: str
     scientific_consequence: str
     severity: Literal["critical", "major", "minor"]
     possible_future_capability: str
+
+
+class CapabilityVerdict(StrEnum):
+    SUPPORTED = "supported"
+    PARTIALLY_SUPPORTED = "partially_supported"
+    UNSUPPORTED = "unsupported"
+    NOT_REACHED = "not_reached"
+
+
+class CapabilityDescriptor(MMOSModel):
+    capability_id: str
+    task_family: str
+    supported_problem_shapes: list[str] = Field(default_factory=list)
+    supported_input_types: list[str] = Field(default_factory=list)
+    supported_decision_types: list[str] = Field(default_factory=list)
+    supported_constraint_types: list[str] = Field(default_factory=list)
+    runner: str
+    validator: str
+    regression_evidence: list[str] = Field(default_factory=list)
+    known_limits: list[str] = Field(default_factory=list)
+    descriptor_hash: str = ""
+
+
+class RequirementCapabilityFit(MMOSModel):
+    requirement_id: str
+    route_task_families: list[str] = Field(default_factory=list)
+    required_capabilities: list[str] = Field(default_factory=list)
+    available_capabilities: list[str] = Field(default_factory=list)
+    verdict: CapabilityVerdict
+    reason: str
+
+
+class CapabilityFitAssessment(MMOSModel):
+    assessment_id: str
+    problem_requirement_ids: list[str] = Field(default_factory=list)
+    route_task_families: list[str] = Field(default_factory=list)
+    required_capabilities: list[str] = Field(default_factory=list)
+    available_capabilities: list[str] = Field(default_factory=list)
+    supported: list[str] = Field(default_factory=list)
+    partially_supported: list[str] = Field(default_factory=list)
+    unsupported: list[str] = Field(default_factory=list)
+    requirement_fits: list[RequirementCapabilityFit] = Field(default_factory=list)
+    blocking_gaps: list[CapabilityGap] = Field(default_factory=list)
+    evidence_for_capability: list[str] = Field(default_factory=list)
+    verdict: CapabilityVerdict
+    assessment_hash: str = ""
+
+
+class BurnRegistry(MMOSModel):
+    competition: str
+    year: int
+    burned_labels: list[str] = Field(default_factory=list)
+    sources: list[str] = Field(default_factory=list)
+    created_at: datetime
+    registry_hash: str = ""
 
 
 class HistoricalBenchmarkRun(MMOSModel):
@@ -185,6 +241,7 @@ class HistoricalBenchmarkRun(MMOSModel):
     protocol_validity: ProtocolValidity = ProtocolValidity.VALID
     source_manifest_hash: str = ""
     selection_manifest_hash: str = ""
+    freshness_registry_hash: str = ""
     code_freeze_commit: str = ""
     problem_revealed_at: datetime | None = None
     created_at: datetime
@@ -206,8 +263,11 @@ class BenchmarkResult(MMOSModel):
     problem_label: str
     source_archive_hash: str
     selection_manifest_hash: str
+    freshness_registry_hash: str = ""
     code_freeze_commit: str
     protocol_validity: ProtocolValidity
+    capability_fit: CapabilityFitAssessment | None = None
+    capability_fit_verdict: CapabilityVerdict = CapabilityVerdict.NOT_REACHED
     blindness_audit: BenchmarkBlindnessAudit | None = None
     router_result: dict[str, object] = Field(default_factory=dict)
     requirement_coverage: dict[str, int] = Field(default_factory=dict)
@@ -237,7 +297,11 @@ __all__ = [
     "BenchmarkResult",
     "BenchmarkSourceManifest",
     "BlindnessPolicy",
+    "BurnRegistry",
+    "CapabilityDescriptor",
+    "CapabilityFitAssessment",
     "CapabilityGap",
+    "CapabilityVerdict",
     "HistoricalBenchmarkRun",
     "HistoricalBenchmarkState",
     "LeakageEvent",
@@ -245,6 +309,7 @@ __all__ = [
     "ProblemRequirement",
     "ProblemSelectionManifest",
     "ProtocolValidity",
+    "RequirementCapabilityFit",
     "RequirementStatus",
     "RevealRecord",
     "SelectionCandidate",

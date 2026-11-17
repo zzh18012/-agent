@@ -25,7 +25,9 @@ from mmos.historical_benchmark.schemas import (
     BenchmarkResult,
     BenchmarkSourceManifest,
     BlindnessPolicy,
+    CapabilityFitAssessment,
     CapabilityGap,
+    CapabilityVerdict,
     HistoricalBenchmarkRun,
     HistoricalBenchmarkState,
     LeakageEvent,
@@ -246,7 +248,15 @@ class HistoricalBenchmarkHarness:
         return self._write_run(run)
 
     def load_run(self) -> HistoricalBenchmarkRun:
-        return HistoricalBenchmarkRun.model_validate_json(self.run_file.read_text(encoding="utf-8"))
+        return HistoricalBenchmarkRun.model_validate_json(
+            self.run_file.read_text(encoding="utf-8")
+        )
+
+    def record_freshness_registry(self, registry_hash: str) -> HistoricalBenchmarkRun:
+        run = self.load_run()
+        return self._write_run(
+            run.model_copy(update={"freshness_registry_hash": registry_hash})
+        )
 
     def log_leakage(
         self,
@@ -335,15 +345,22 @@ class HistoricalBenchmarkHarness:
     def discover_labels(self) -> list[str]:
         return _labels_from_zip(self.archive_path())
 
-    def commit_selection(self, now: datetime | None = None) -> ProblemSelectionManifest:
+    def commit_selection(
+        self,
+        now: datetime | None = None,
+        *,
+        eligible_labels: list[str] | None = None,
+    ) -> ProblemSelectionManifest:
         if self.selection_file.exists():
             return ProblemSelectionManifest.model_validate_json(
                 self.selection_file.read_text(encoding="utf-8")
             )
         source = self.load_source_manifest()
         labels = self.discover_labels()
+        if eligible_labels is not None:
+            labels = [label for label in labels if label in set(eligible_labels)]
         if not labels:
-            raise HistoricalBenchmarkError("no A/B/C labels discovered in archive listing")
+            raise HistoricalBenchmarkError("no unburned A/B/C labels discovered")
         candidates = [
             SelectionCandidate(
                 label=label,
@@ -756,6 +773,8 @@ class HistoricalBenchmarkHarness:
         judge: str | None = None,
         unresolved_issues: list[str] | None = None,
         capability_gaps: list[CapabilityGap] | None = None,
+        capability_fit: CapabilityFitAssessment | None = None,
+        freshness_registry_hash: str = "",
     ) -> BenchmarkResult:
         run = self.load_run()
         if run.problem_label is None:
@@ -766,7 +785,9 @@ class HistoricalBenchmarkHarness:
         coverage = {status.value: 0 for status in RequirementStatus}
         for requirement in requirements:
             coverage[requirement.status.value] += 1
-        gaps = capability_gaps or []
+        gaps = capability_gaps or (
+            capability_fit.blocking_gaps if capability_fit is not None else []
+        )
         result = BenchmarkResult(
             benchmark_run_id=self.benchmark_run_id,
             competition=self.competition,
@@ -774,8 +795,15 @@ class HistoricalBenchmarkHarness:
             problem_label=run.problem_label,
             source_archive_hash=self.load_source_manifest().archive_sha256,
             selection_manifest_hash=self.load_selection().selection_hash,
+            freshness_registry_hash=freshness_registry_hash,
             code_freeze_commit=run.code_freeze_commit,
             protocol_validity=run.protocol_validity,
+            capability_fit=capability_fit,
+            capability_fit_verdict=(
+                capability_fit.verdict
+                if capability_fit is not None
+                else CapabilityVerdict.NOT_REACHED
+            ),
             blindness_audit=audit,
             router_result=router,
             requirement_coverage=coverage,
@@ -799,6 +827,8 @@ class HistoricalBenchmarkHarness:
             update={"result_hash": _hash_model(result, exclude=("result_hash",))}
         )
         _write_json(self.root / "benchmark_result.json", result)
+        if capability_fit is not None:
+            _write_json(self.root / "capability_fit.json", capability_fit)
         atomic_write_text(
             self.root / "capability_gaps.json",
             json.dumps({"gaps": [gap.model_dump(mode="json") for gap in gaps]}, indent=2) + "\n",
