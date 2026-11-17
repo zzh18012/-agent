@@ -211,6 +211,10 @@ class HistoricalBenchmarkHarness:
         return self.root / "blindness_policy.json"
 
     @property
+    def reserve_authorization_file(self) -> Path:
+        return self.root / "reserve_authorization.json"
+
+    @property
     def leakage_file(self) -> Path:
         return self.root / "leakage_log.jsonl"
 
@@ -392,12 +396,53 @@ class HistoricalBenchmarkHarness:
             self.selection_file.read_text(encoding="utf-8")
         )
 
+    def authorize_reserve(self, prior_run_id: str, reason: str) -> None:
+        prior_dir = self.repo_root / "benchmarks" / "historical" / prior_run_id
+        prior_run_file = prior_dir / "benchmark_run.json"
+        if not prior_run_file.exists():
+            raise HistoricalBenchmarkError(f"prior benchmark run not found: {prior_run_id}")
+        prior = HistoricalBenchmarkRun.model_validate_json(
+            prior_run_file.read_text(encoding="utf-8")
+        )
+        if prior.protocol_validity is not ProtocolValidity.INVALIDATED_INFRASTRUCTURE:
+            raise BlindnessViolation(
+                "reserve authorization requires an invalidated infrastructure run"
+            )
+        atomic_write_text(
+            self.reserve_authorization_file,
+            json.dumps(
+                {
+                    "prior_run_id": prior_run_id,
+                    "prior_run_hash": prior.run_hash,
+                    "reason": reason,
+                },
+                indent=2,
+            )
+            + "\n",
+        )
+
     def _reserve_allowed(self, label: str) -> bool:
-        run = self.load_run()
-        if run.protocol_validity is not ProtocolValidity.INVALIDATED_INFRASTRUCTURE:
-            return False
         selection = self.load_selection()
-        return label in selection.reserve_labels
+        if label not in selection.reserve_labels:
+            return False
+        run = self.load_run()
+        if run.protocol_validity is ProtocolValidity.INVALIDATED_INFRASTRUCTURE:
+            return True
+        if not self.reserve_authorization_file.exists():
+            return False
+        authorization = json.loads(
+            self.reserve_authorization_file.read_text(encoding="utf-8")
+        )
+        prior_id = str(authorization.get("prior_run_id", ""))
+        prior_file = (
+            self.repo_root / "benchmarks" / "historical" / prior_id / "benchmark_run.json"
+        )
+        if not prior_file.exists():
+            return False
+        prior = HistoricalBenchmarkRun.model_validate_json(
+            prior_file.read_text(encoding="utf-8")
+        )
+        return prior.protocol_validity is ProtocolValidity.INVALIDATED_INFRASTRUCTURE
 
     def reveal(
         self,
@@ -494,10 +539,16 @@ class HistoricalBenchmarkHarness:
             raise HistoricalBenchmarkError(f"unsupported problem file: {source.name}")
         return target
 
+    @staticmethod
+    def _is_problem_document(path: Path) -> bool:
+        return path.suffix.lower() in {".txt", ".md", ".markdown", ".pdf", ".doc", ".docx"}
+
     def problem_text(self) -> str:
         self.load_reveal()
         parts: list[str] = []
         for source in self.selected_files():
+            if not self._is_problem_document(source):
+                continue
             derived = self._derive_text(source)
             parts.append(f"## {source.name}\n\n{derived.read_text(encoding='utf-8')}")
         self.log_leakage(
@@ -518,6 +569,8 @@ class HistoricalBenchmarkHarness:
         reveal = self.load_reveal()
         problem_files: list[Path] = []
         for source in self.selected_files():
+            if not self._is_problem_document(source):
+                continue
             derived = self._derive_text(source)
             if derived.suffix.lower() not in {".txt", ".md", ".markdown"}:
                 continue
@@ -644,6 +697,10 @@ class HistoricalBenchmarkHarness:
         checks["no_prohibited_access"] = not prohibited
         checks["no_human_scientific_intervention"] = not human
         checks["one_reveal"] = self.reveal_file.exists()
+        if reveal.problem_label != selection.primary_label:
+            checks["reserve_authorized"] = self._reserve_allowed(
+                reveal.problem_label
+            )
         audit = BenchmarkBlindnessAudit(
             checks=checks,
             prohibited_access_count=len(prohibited),

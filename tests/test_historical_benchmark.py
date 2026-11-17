@@ -31,6 +31,7 @@ def make_archive(root: Path) -> Path:
         handle.writestr("B题/problem.txt", "B problem statement\n")
         handle.writestr("C题/problem.txt", "C problem statement\n")
         handle.writestr("A题/README.txt", "A readme\n")
+        handle.writestr("B题/附件/data.xlsx", b"not really an xlsx")
     return archive
 
 
@@ -146,7 +147,7 @@ def test_package_extraction_and_project_ingestion(tmp_path: Path) -> None:
     h = harness(tmp_path)
     h.commit_selection(now=NOW)
     source = h.extract_package()
-    assert len(source.extracted_files) == 4
+    assert len(source.extracted_files) == 5
     assert all(entry.sha256 for entry in source.extracted_files)
     freeze(h, tmp_path)
     reveal = h.reveal(attempt_id="a1", now=NOW)
