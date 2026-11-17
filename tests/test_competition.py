@@ -14,11 +14,16 @@ from mmos.competition.agents import (
     MathAuditor,
     PaperArchitect,
 )
-from mmos.competition.context import CompetitionContextError, load_context
+from mmos.competition.context import (
+    CompetitionContextError,
+    _collect_experiment_ids,
+    load_context,
+)
 from mmos.competition.number_audit import (
     NumberAuditError,
     audit_texts,
     expand_text,
+    format_display_value,
 )
 from mmos.competition.requests import (
     CompetitionRequestError,
@@ -318,6 +323,55 @@ def test_number_audit_rejects_fabricated_value() -> None:
 def test_number_audit_rejects_unknown_evidence() -> None:
     with pytest.raises(NumberAuditError):
         expand_text("Value [[ev:missing]]", {}, location="Abstract")
+
+
+def test_number_audit_accepts_rounded_evidence_value() -> None:
+    record = evidence_record().model_copy(
+        update={"raw_value": 0.9924756193, "display_value": "0.9924756193"}
+    )
+    records = {EVIDENCE_ID: record}
+    assert format_display_value(record.raw_value, record.display_value) == "0.9925"
+    fragment = expand_text(
+        f"Fill rate [[ev:{EVIDENCE_ID}]].",
+        records,
+        location="Results",
+    )
+    assert fragment.text == "Fill rate 0.9925."
+    report = audit_texts([fragment], records, ())
+    assert not report.blocking
+
+
+def test_number_audit_formats_simulation_summary_at_two_digits() -> None:
+    record = evidence_record().model_copy(
+        update={
+            "key": "mixed.simulation.shortage.mean_total_shortage",
+            "raw_value": 3.444970588,
+            "display_value": "3.444970588",
+        }
+    )
+    records = {EVIDENCE_ID: record}
+    fragment = expand_text(
+        f"Shortage [[ev:{EVIDENCE_ID}]].",
+        records,
+        location="Results",
+    )
+    assert fragment.text == "Shortage 3.4."
+    assert not audit_texts([fragment], records, ()).blocking
+
+
+def test_experiment_task_mapping_is_not_first_prefix() -> None:
+    rows = _collect_experiment_ids(
+        {
+            "forecast_experiment_id": "exp-forecast",
+            "optimization_experiment_id": "exp-optimization",
+            "simulation_experiment_id": "exp-simulation",
+        }
+    )
+    assert rows == [
+        ("exp-forecast", "forecast", "forecasting"),
+        ("exp-optimization", "optimization", "optimization"),
+        ("exp-simulation", "simulation", "simulation"),
+    ]
 
 
 def test_request_classification_and_unknown_evidence() -> None:

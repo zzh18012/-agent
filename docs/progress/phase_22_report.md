@@ -191,3 +191,101 @@ gate.
 `feat(phase-22.1): add competition paper agent`
 
 No push; no Competition Mode or `mmos solve` yet.
+
+# Phase 22.2 — Competition Evidence Augmentation Loop
+
+## Scope
+
+One augmentation cycle was added on top of the Phase 22.1 competition paper sidecar:
+resolve the source paper's request manifest deterministically, execute only requests mapped
+to existing formal runners, validate and register the results as separate
+`competition_experiment` evidence, regenerate the paper from the augmented context, and
+re-run the independent number audit, math audit, and Red Team. The source project remains
+`RELEASED`; its release, verified evidence index, and artifacts are not modified.
+
+## Implementation
+
+- `src/mmos/competition/augmentation.py`: resolution classes
+  `EXECUTABLE_EXISTING_CAPABILITY`, `REQUIRES_NEW_CAPABILITY`,
+  `REQUIRES_HUMAN_DECISION`, `NOT_JUSTIFIED`, `INVALID`; formal adapters for
+  optimization sensitivity and simulation replication stability; system-owned
+  `executed`/`validated`/`evidence_registered` flags; evidence store integrity checks;
+  source-release/request-manifest staleness checks; resume without re-executing
+  experiments.
+- `src/mmos/competition/context.py`: source catalog plus derived competition evidence
+  (frozen plan/forecast values, capacity/cost terms, objective recomputation, simulation
+  diagnostics, fold means), with only the 54 appended augmentation records excluded from
+  the LLM catalog and presented in the appendix.
+- `src/mmos/paper/competition_builder.py`: system-owned table/figure captions, frozen
+  plan/parameter/objective/simulation diagnostics tables, augmentation reconciliation,
+  four-significant-digit rendering (simulation summaries at two), and strict separation
+  of appended evidence from source claims.
+- `src/mmos/competition_pipeline.py`: deterministic model closure and residual-bias
+  statements, notation completion, stale-claim filtering, abstract caveat, and bounded
+  math revision.
+- `tests/test_competition_augmentation.py` (7 tests) plus expanded
+  `tests/test_competition.py` cover resolution, eligible-only execution, failure retention,
+  source immutability, manifest/artifact hash staleness, executed-flag rejection,
+  caption/rounding behavior, and experiment-task mapping.
+
+## Real run
+
+- Source project: `projects/mixed-forecast-plan-sim-20261116d-20261116-828a5b`
+  (remains `RELEASED`)
+- Source release: `releases/mixed_mixed-a5aad5c1-73b2e9.json`, SHA-256
+  `5165180adc3b8f56b39201566b0163a87fb27f90ab0024fddc7c493a578d0282` (unchanged
+  before and after augmentation)
+- Source verified evidence SHA-256:
+  `13a135e616be9b3a5defdf4d31240713d7f8fb923d5eee8bcfbd12f2a527506e` (unchanged)
+- Source context hash: `a3d3fcded8d1e0685986999c2d2f830b1717a56d2bda2316d8efab7f80f1fd58`
+- Source competition run: `comp-a3d3fcde-f531`
+- Augmentation: `aug-d0e04bfa-a1a9`
+- Request manifest hash: `d0e04bfa7e8fddb632046290606463e1d29e50a4f46e4c6efaab6725263104ab`
+- Resolution distribution: 3 `executable_existing_capability`, 5
+  `requires_new_capability`, 1 `requires_human_decision`.
+- Executed and evidence-registered:
+  - request-3: 2 optimization experiments, 16 evidence records
+  - request-7: 3 optimization experiments, 24 evidence records
+  - request-9: 2 simulation experiments, 14 evidence records
+  - Total: 7 experiments, 54 new `competition_experiment` evidence records
+- Not executed, retained as failures: request-1, request-4, request-5, request-6,
+  request-8 (`requires_new_capability`); request-2 (`requires_human_decision`).
+- Evidence store: `paper/competition/augmentation/aug-d0e04bfa-a1a9/evidence.json`,
+  SHA-256 `a1060145dbd57029afbfe9a44165c6f1d8bfe6a07188c83e1d9e533ef85d16a1`.
+- Regenerated paper run: `comp-b0e30df9-8363` (context hash
+  `b0e30df918894e2c4ab5367e0cdf6e8dc4d211ce2c3b3914fd638f37eb09b892`), paper SHA-256
+  `0f3176411942008bf477e34493a702c54d368c139c040d48d2efb17c680d8e41`.
+- Number audit: 59 tokens checked, 0 unverified.
+- Math audit: 8 issues, 0 critical.
+- Red Team / Judge: **REVISE** (blocking), with two critical findings: (a1) the plan's
+  deterministic demand-satisfaction convention is not stated explicitly enough to make the
+  capacity-driven build-ahead auditable; (a2) the proxy fold-model residual pool has an
+  uncorrected negative mean and no de-meaned rerun exists, so the simulation summaries are
+  not interpretable as service. No competition paper release was written.
+- Source release and verified evidence hashes are byte-identical before and after the
+  augmentation. The project state remains `RELEASED`.
+
+## Outcome and limitations
+
+The one-cycle augmentation loop is implemented and completed its execution/evidence stages:
+three requests produced seven validated experiments and 54 registered evidence records,
+and the regenerated paper reached the independent Red Team with a clean number audit and no
+critical math-audit issue. The paper did not pass the Red Team because the remaining
+scientific gaps require new capability or a human decision: de-meaned/alternative residual
+resampling, a comparator plan, broader forecast families, a bootstrap/interval policy, and
+raw-series/seed-draw publication. These are recorded as unresolved requests rather than
+hidden or auto-upgraded. No source claim was revised by augmentation evidence, and no
+release was fabricated.
+
+## Verification
+
+- `uv run pytest` (full suite)
+- `uv run ruff check .`
+- `uv run pyright`
+
+## Commit
+
+`feat(phase-22.2): close competition evidence augmentation loop`
+
+No push; no Phase 23, Competition Mode, CUMCM/MCM binding, LaTeX, deadline, blind
+benchmark, or `mmos solve`.

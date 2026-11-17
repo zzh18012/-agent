@@ -229,6 +229,73 @@ class NumberAuditReport(MMOSModel):
         return bool(self.unverified)
 
 
+class ResolutionClass(StrEnum):
+    EXECUTABLE_EXISTING_CAPABILITY = "executable_existing_capability"
+    REQUIRES_NEW_CAPABILITY = "requires_new_capability"
+    REQUIRES_HUMAN_DECISION = "requires_human_decision"
+    NOT_JUSTIFIED = "not_justified"
+    INVALID = "invalid"
+
+
+class ExecutionStatus(StrEnum):
+    PROPOSED = "proposed"
+    RESOLVED = "resolved"
+    EXECUTABLE = "executable"
+    BLOCKED = "blocked"
+    EXECUTING = "executing"
+    EXECUTED = "executed"
+    VALIDATING = "validating"
+    VALIDATED = "validated"
+    REJECTED = "rejected"
+    EVIDENCE_REGISTERED = "evidence_registered"
+    FAILED = "failed"
+
+
+class RequestResolution(MMOSModel):
+    request_id: str
+    classification: ResolutionClass
+    mapped_kind: str | None = None
+    rationale: str = Field(min_length=1)
+    blocker_reason: str | None = None
+    executable: bool = False
+
+
+class RequestExecution(MMOSModel):
+    request_id: str
+    status: ExecutionStatus
+    experiment_ids: list[str] = Field(default_factory=list)
+    validation_status: dict[str, str] = Field(default_factory=dict)
+    evidence_ids: list[str] = Field(default_factory=list)
+    error: str | None = None
+    executed: bool = False
+    validated: bool = False
+    evidence_registered: bool = False
+
+
+class CompetitionAugmentationRun(MMOSModel):
+    augmentation_id: str
+    source_project_id: str
+    source_release: str
+    source_release_hash_before: str
+    source_release_hash_after: str
+    source_verified_numbers_hash_before: str
+    source_verified_numbers_hash_after: str
+    source_context_hash: str
+    source_competition_run_id: str
+    request_manifest_hash: str
+    resolutions: list[RequestResolution]
+    executions: list[RequestExecution]
+    new_evidence_ids: list[str] = Field(default_factory=list)
+    evidence_store_path: str
+    evidence_store_hash: str
+    new_competition_run_id: str | None = None
+    new_paper_path: str | None = None
+    new_release_path: str | None = None
+    new_paper_error: str | None = None
+    status: Literal["completed", "partial", "blocked"]
+    created_at: datetime
+
+
 class CompetitionPaperRun(MMOSModel):
     run_id: str
     source_release: str
@@ -252,10 +319,12 @@ __all__ = [
     "Capability",
     "CapabilityNeed",
     "ClaimPoint",
+    "CompetitionAugmentationRun",
     "CompetitionExperimentManifest",
     "CompetitionExperimentRequest",
     "CompetitionPaperPlan",
     "CompetitionPaperRun",
+    "ExecutionStatus",
     "ExperimentAnalysisReport",
     "ExperimentFinding",
     "FigurePlan",
@@ -269,6 +338,9 @@ __all__ = [
     "NumberAuditFinding",
     "NumberAuditReport",
     "Priority",
+    "RequestExecution",
+    "RequestResolution",
+    "ResolutionClass",
     "SectionKind",
     "SectionPlan",
     "TablePlan",

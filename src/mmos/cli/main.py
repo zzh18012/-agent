@@ -38,6 +38,12 @@ from mmos.competition.agents import (
     MathAuditor,
     PaperArchitect,
 )
+from mmos.competition.augmentation import (
+    CompetitionAugmentationBlocked,
+    CompetitionAugmentationError,
+    resume_augmentation,
+    run_augmentation,
+)
 from mmos.competition_pipeline import (
     CompetitionPaperBlocked,
     CompetitionPaperError,
@@ -1877,3 +1883,82 @@ def competition_paper(
     console.print(f"Review: {summary.run.review_path}")
     console.print(f"Release: {summary.run.release_path}")
     console.print("No requested experiment was executed.")
+
+
+@app.command(name="competition-augment")
+def competition_augment(
+    project: Annotated[str, typer.Argument(help="Released project id or directory.")],
+    source_run: Annotated[
+        str,
+        typer.Option(
+            "--source-run", help="Source competition run id to augment."
+        ),
+    ],
+    resume_id: Annotated[
+        str | None,
+        typer.Option(
+            "--resume-augmentation",
+            help="Resume an existing augmentation directory without re-running experiments.",
+        ),
+    ] = None,
+    projects_dir: Annotated[
+        Path | None, typer.Option("--projects-dir", help="Base directory for projects.")
+    ] = None,
+) -> None:
+    """Resolve and execute eligible requests from a competition paper gap manifest."""
+    paths = resolve_project(project, _projects_base(projects_dir))
+    config = load_project_config(paths)
+    if config.state is not ProjectState.RELEASED:
+        console.print(
+            f"Error: competition-augment requires a RELEASED project; current state is "
+            f"{config.state.value}.",
+            style="red",
+        )
+        raise typer.Exit(code=1)
+
+    shared_model = _model_or_exit()
+    agents = CompetitionAgents(
+        architect=PaperArchitect(shared_model),
+        math_auditor=MathAuditor(shared_model),
+        experiment_analyst=ExperimentAnalyst(shared_model),
+        figure_designer=FigureDesigner(shared_model),
+    )
+    reviewer = lambda ast, run_id: RedTeam(shared_model).run(  # noqa: E731
+        ast, experiment_id=run_id
+    )
+    try:
+        summary = (
+            resume_augmentation(
+                paths, agents, reviewer, resume_id, source_run
+            )
+            if resume_id
+            else run_augmentation(paths, agents, reviewer, source_run)
+        )
+    except CompetitionAugmentationBlocked as exc:
+        console.print(f"Competition augmentation blocked: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+    except (CompetitionAugmentationError, ValueError, FileNotFoundError) as exc:
+        console.print(f"Error: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    distribution = Counter(
+        resolution.classification.value
+        for resolution in summary.run.resolutions
+    )
+    console.print(f"Augmentation: {summary.run.augmentation_id}")
+    console.print(f"Source competition run: {summary.run.source_competition_run_id}")
+    console.print(f"Status: {summary.run.status}")
+    for key, count in sorted(distribution.items()):
+        console.print(f"  {key}: {count}")
+    for execution in summary.run.executions:
+        console.print(
+            f"  {execution.request_id}: {execution.status.value} "
+            f"experiments={len(execution.experiment_ids)} "
+            f"evidence={len(execution.evidence_ids)}"
+        )
+    console.print(f"New evidence: {len(summary.run.new_evidence_ids)}")
+    console.print(f"New competition run: {summary.run.new_competition_run_id}")
+    console.print(f"New paper: {summary.run.new_paper_path}")
+    console.print(f"New release: {summary.run.new_release_path}")
+    if summary.run.new_paper_error:
+        console.print(f"Paper error: {summary.run.new_paper_error}", style="red")

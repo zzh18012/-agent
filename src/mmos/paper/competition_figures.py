@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from mmos.competition.context import CatalogEntry, EvidenceContext
+from mmos.competition.number_audit import numeric_tokens
 from mmos.core.project import ProjectPaths, atomic_write_text, sha256_file
 from mmos.schemas.competition import FigurePlan, FigureTemplate
 from mmos.schemas.paper import PaperFigure
@@ -167,25 +168,41 @@ def _uncertainty(
     prefixes = sorted(set(lows) & set(highs))
     if not prefixes:
         raise CompetitionFigureError("no paired confidence-interval evidence found")
+    folds = {
+        entry.key.removesuffix(".folds"): entry
+        for entry in context.entries
+        if entry.numeric and entry.key.endswith(".folds")
+    }
     figure_obj, axis = plt.subplots(figsize=(8, max(3, 0.5 * len(prefixes) + 2)))
+    used: list[CatalogEntry] = []
     for index, prefix in enumerate(prefixes):
         low = float(lows[prefix].raw_value)
         high = float(highs[prefix].raw_value)
         axis.plot([low, high], [index, index], color="#4c72b0", lw=2)
         axis.plot([low, high], [index, index], "|", color="#1f3b5c", ms=10)
+        used.extend([lows[prefix], highs[prefix]])
+        fold_entry = folds.get(prefix)
+        if fold_entry is not None:
+            for token in numeric_tokens(fold_entry.display_value):
+                axis.plot(
+                    float(token),
+                    index,
+                    "o",
+                    color="#dd8452",
+                    ms=6,
+                    markeredgecolor="white",
+                    markeredgewidth=0.5,
+                )
+            used.append(fold_entry)
     axis.set_yticks(range(len(prefixes)), prefixes, fontsize=8)
-    axis.set_xlabel("confidence interval")
-    axis.set_title(figure.caption)
+    axis.set_xlabel("value (dots: folds; line: interval for the mean)")
+    axis.set_title("Fold values and mean interval")
     axis.grid(True, axis="x", alpha=0.3)
     target = out_dir / f"{figure.figure_id}.png"
     figure_obj.tight_layout()
     figure_obj.savefig(target, dpi=120)
     plt.close(figure_obj)
-    _write_figure_spec(
-        target,
-        figure,
-        [lows[prefix] for prefix in prefixes] + [highs[prefix] for prefix in prefixes],
-    )
+    _write_figure_spec(target, figure, list(dict.fromkeys(used)))
     return PaperFigure(
         figure_id=figure.figure_id,
         caption=figure.caption,

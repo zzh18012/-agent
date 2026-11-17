@@ -17,6 +17,26 @@ class NumberAuditError(RuntimeError):
     pass
 
 
+def format_display_value(raw_value: float | int | str, display_value: str) -> str:
+    if isinstance(raw_value, bool) or not isinstance(raw_value, (int, float)):
+        return display_value
+    if isinstance(raw_value, int):
+        return str(raw_value)
+    return f"{raw_value:.4g}"
+
+
+def format_record_value(record: EvidenceRecord) -> str:
+    if (
+        record.key.startswith("mixed.simulation.")
+        and isinstance(record.raw_value, (int, float))
+        and not isinstance(record.raw_value, bool)
+    ):
+        if isinstance(record.raw_value, int):
+            return str(record.raw_value)
+        return f"{record.raw_value:.2g}"
+    return format_display_value(record.raw_value, record.display_value)
+
+
 @dataclass(frozen=True)
 class ExpandedText:
     text: str
@@ -43,7 +63,7 @@ def expand_text(
                 f"{location}: unknown evidence id in placeholder: {evidence_id}"
             )
         cited.append(evidence_id)
-        return record.display_value
+        return format_record_value(record)
 
     expanded = PLACEHOLDER_RE.sub(replace, text)
     if PLACEHOLDER_RE.search(expanded):
@@ -64,6 +84,8 @@ def _allowed_values(
         record = records[evidence_id]
         values.add(record.display_value)
         values.add(str(record.raw_value))
+        values.add(format_display_value(record.raw_value, record.display_value))
+        values.add(format_record_value(record))
         values.update(_NUMBER_RE.findall(record.display_value))
         values.update(_NUMBER_RE.findall(str(record.raw_value)))
         if isinstance(record.raw_value, float):
@@ -91,6 +113,10 @@ def _token_allowed(
         except ValueError:
             continue
     return False
+
+
+def numeric_tokens(text: str) -> list[str]:
+    return _NUMBER_RE.findall(text)
 
 
 def audit_texts(
@@ -134,4 +160,5 @@ __all__ = [
     "NumberAuditError",
     "audit_texts",
     "expand_text",
+    "numeric_tokens",
 ]

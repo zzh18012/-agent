@@ -1,5 +1,6 @@
 import json
 from dataclasses import dataclass
+from itertools import chain
 from typing import Protocol
 
 from pydantic_ai import Agent
@@ -44,16 +45,21 @@ Rules:
   "Conditional Simulation of a Frozen Production Plan" when the evidence supports it.
 - Use the provided `model_facts` equations as the authoritative formulations. Do not
   invent alternative recurrences, denominators, or slope rules. Separate stocks from
-  per-period flows and give exact notation units. State that the demand floor is part of
-  the protocol, not a tested safeguard. Do not state numeric capacities, costs, or initial
-  inventory unless an evidence id exists; otherwise refer to the frozen plan artifact and
-  mark the gap as unavailable.
+  per-period flows and give exact notation units. Use `I_init` for the initial inventory;
+  never write `I_0` as a stock. Artifact `inventory_0` is month-end stock `I_1`. State
+  that the demand floor is part of the protocol, not a tested safeguard. Do not state
+  numeric capacities, costs, or initial inventory unless an evidence id exists; otherwise
+  refer to the frozen plan artifact and mark the gap as unavailable.
 - Put missing analyses (comparator, sensitivity, pool bootstrap, held-out fold) in
-  limitations and capability_needs, not in unsupported claims.
-- Keep output compact: at most 4 abstract points (each <= 60 words), exactly one
-  block per section (<= 90 words), at most 2 claim_points per section, at most 5
-  assumptions, at most 8 notation entries, at most 5 limitations, at most 3 tables,
-  and at most 4 capability_needs.
+  limitations and capability_needs, not in unsupported claims. Do not claim objective
+  degeneracy, solution multiplicity, or a family of optimal plans.
+- Keep output compact: at most 3 abstract points (each <= 40 words), exactly one
+  block per section (<= 55 words), omit claim_points unless the block cannot carry
+  the claim (then at most one, <= 35 words), at most 4 assumptions, at most 6
+  notation entries, at most 4 limitations, at most 2 tables, and at most 2
+  capability_needs. Do not repeat the problem statement. Keep every purpose,
+  limitation, and capability need to one short sentence and cite at most 2 evidence
+  ids per field.
 """
 
 MATH_AUDIT_PROMPT = """\
@@ -254,14 +260,35 @@ class PaperArchitect:
         plan: CompetitionPaperPlan,
         audit: MathAuditReport,
     ) -> CompetitionPaperPlan:
+        used_ids = {
+            *chain.from_iterable(
+                section.evidence_ids for section in plan.sections
+            ),
+            *chain.from_iterable(
+                table.evidence_ids for table in plan.tables
+            ),
+            *chain.from_iterable(
+                need.supporting_evidence_ids for need in plan.capability_needs
+            ),
+        }
+        evidence_subset = [
+            entry.prompt_dict()
+            for entry in context.entries
+            if entry.evidence_id in used_ids
+        ]
         prompt = (
             "Revise the competition paper plan to resolve these independent mathematical "
-            "audit issues without inventing evidence or numbers:\n\n"
+            "audit issues without inventing evidence or numbers. Return the complete "
+            "compact plan, no extra commentary:\n\n"
             + json.dumps(audit.model_dump(mode="json"), indent=2)
             + "\n\nCurrent plan:\n\n"
             + json.dumps(plan.model_dump(mode="json"), indent=2)
-            + "\n\nFrozen context:\n\n"
-            + _payload(context)
+            + "\n\nFrozen problem:\n\n"
+            + json.dumps(context.problem.model_dump(mode="json"), indent=2)
+            + "\n\nModel facts:\n\n"
+            + json.dumps(list(context.model_facts), indent=2)
+            + "\n\nEvidence used by the plan:\n\n"
+            + json.dumps(evidence_subset, indent=2, sort_keys=True)
         )
         result = self._agent.run_sync(prompt)
         return self._finalize(result.output)
@@ -394,16 +421,19 @@ class FigureDesigner:
         plan: CompetitionPaperPlan,
         analysis: ExperimentAnalysisReport,
     ) -> list[FigurePlan]:
-        numeric_keys: dict[str, int] = {}
+        numeric_keys: dict[str, dict[str, int]] = {}
         for entry in context.entries:
             if not entry.numeric:
                 continue
             prefix = entry.key.rsplit(".", 1)[0] if "." in entry.key else entry.key
-            numeric_keys[prefix] = numeric_keys.get(prefix, 0) + 1
+            unit = entry.unit or "unitless"
+            numeric_keys.setdefault(prefix, {}).setdefault(unit, 0)
+            numeric_keys[prefix][unit] += 1
         prompt = (
             "Available figure templates and counts:\n\n"
             + json.dumps(context.available_figures, indent=2)
-            + "\n\nAvailable numeric metric prefixes:\n\n"
+            + "\n\nAvailable numeric metric prefixes (unit -> count; choose a prefix "
+            "with exactly one unit):\n\n"
             + json.dumps(dict(sorted(numeric_keys.items())[:40]), indent=2)
             + "\n\nSection headings:\n\n"
             + json.dumps([section.heading for section in plan.sections], indent=2)
@@ -434,12 +464,20 @@ class FigureDesigner:
                 )
             if figure.template.value == "metric_bar":
                 prefix = figure.metric_prefix or ""
-                if not any(
-                    entry.numeric and entry.key.startswith(prefix)
+                matching = [
+                    entry
                     for entry in context.entries
-                ):
+                    if entry.numeric and entry.key.startswith(prefix)
+                ]
+                if not matching:
                     raise CompetitionAgentError(
                         f"metric prefix {prefix!r} has no numeric evidence"
+                    )
+                units = {entry.unit for entry in matching}
+                if len(units) > 1:
+                    raise CompetitionAgentError(
+                        f"metric prefix {prefix!r} mixes units "
+                        f"{sorted(str(unit) for unit in units)}"
                     )
             figures.append(
                 figure.model_copy(

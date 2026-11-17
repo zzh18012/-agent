@@ -1,6 +1,8 @@
 import hashlib
 import json
+import math
 import re
+import statistics
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -85,6 +87,9 @@ class EvidenceContext:
     available_figures: dict[str, int]
     model_facts: tuple[str, ...]
     derived_records: tuple[EvidenceRecord, ...]
+    appendix_records: tuple[EvidenceRecord, ...]
+    extra_evidence_ids: tuple[str, ...]
+    augmentation_id: str | None
     total_evidence_count: int
     catalog_truncated: bool
 
@@ -109,6 +114,8 @@ class EvidenceContext:
             "available_tables": self.available_tables,
             "available_figures": self.available_figures,
             "model_facts": list(self.model_facts),
+            "augmentation_id": self.augmentation_id,
+            "augmentation_appendix_record_count": len(self.appendix_records),
             "catalog_truncated": self.catalog_truncated,
         }
 
@@ -137,7 +144,7 @@ def _collect_experiment_ids(payload: object, prefix: str = "") -> list[tuple[str
                     "forecasting"
                     if "forecast" in label
                     else "optimization"
-                    if "optim"
+                    if "optim" in label
                     else "simulation"
                     if "simulation" in label
                     else "unknown"
@@ -199,10 +206,12 @@ def _model_facts(release: dict) -> tuple[str, ...]:
         "simulation_experiment_id" in keys
     ):
         return (
-            "Period convention: planning periods m=1,2,3. I_0 is the frozen initial "
-            "inventory. Deterministic balance: I_m = I_(m-1) + P_m - F_m for m=1..3, "
-            "0 <= P_m <= cap_m, I_m >= 0, minimize sum_m(c_p*P_m + c_h*I_m). Do not "
-            "index production from zero; the reported inventory_0 is I_1.",
+            "Period convention: planning periods m=1,2,3. Use `I_init` for the frozen "
+            "initial inventory and `I_m` for month-end stock. Deterministic balance: "
+            "I_m = I_(m-1) + P_m - F_m for m=1..3 with I_0 = I_init, 0 <= P_m <= cap_m, "
+            "I_m >= 0, minimize sum_m(c_p*P_m + c_h*I_m). Artifact index 0 corresponds "
+            "to m=1: artifact `inventory_0` is I_1. Never define I_0 as both the initial "
+            "inventory and the first reported inventory; use I_init explicitly.",
             "Forecast convention: T is the count of historical observations (T=24); y_1 "
             "is the first and y_T the last observation; slope=(y_T-y_1)/(T-1); "
             "F_(T+h)=y_T+h*slope for h=1,2,3. Fold windows are 0-based half-open "
@@ -229,8 +238,53 @@ def _model_facts(release: dict) -> tuple[str, ...]:
             "one-month convention. Do not claim capacity enforcement; the plan only "
             "exhibits one feasible point.",
             "Do not claim exchangeability, iid validity, unbiasedness, robustness, "
-            "service guarantees, reproducibility, or model superiority. The demand "
-            "floor is protocol bookkeeping; with zero activations it is untested.",
+            "service guarantees, reproducibility, or model superiority. Do not claim "
+            "the objective is degenerate or that the reported plan is one of a family "
+            "of optimal solutions; no uniqueness or degeneracy analysis is evidenced. "
+            "The demand floor is protocol bookkeeping; with zero activations it is "
+            "untested.",
+            "Uncertainty convention: `uncertainty.*.folds` lists the four fold-level "
+            "values; `uncertainty.*.ci_low/ci_high` is a confidence interval for the "
+            "fold mean, not the min/max fold range and not a predictive interval. Never "
+            "describe the interval as containing all folds; report fold values "
+            "separately and say the interval is for the mean.",
+            "Residual caveat: the pooled residual mean is a registered evidence value "
+            "(key mixed.forecast_error.mean) and is not assumed zero. Residuals are not "
+            "recentered before resampling, so simulated demand inherits the pool's mean "
+            "shift and the simulation does not represent the deployed forecast's own "
+            "error distribution. State both points explicitly; do not claim unbiased or "
+            "calibrated service.",
+            "Precision caveat: evidence values are rendered at four significant digits "
+            "(simulation summaries at two); the digit count is not a Monte Carlo "
+            "precision claim. Duplicate residual paths exist (compare "
+            "`mixed.simulation.distinct_residual_paths` with "
+            "`mixed.simulation.replications`), so effective sample size is below nominal. "
+            "Report the recorded normal-approximation standard errors "
+            "`mixed.simulation.shortage.standard_error`, "
+            "`mixed.simulation.service.fill_rate.standard_error`, and "
+            "`mixed.simulation.any_shortage_probability.standard_error` alongside the "
+            "means; no bootstrap interval was executed.",
+            "Fold mean: `uncertainty.*.fold_mean` is the arithmetic mean of the recorded "
+            "fold values, while the pooled metric is computed from all rolling-origin "
+            "errors. Do not describe the fold-mean interval as an interval for the pooled "
+            "metric; state that the interval construction is not evidenced.",
+            "Simulation seed: `mixed.simulation.master_seed` and the replication seed "
+            "hash are recorded. The per-replication draw implementation is not described "
+            "beyond the protocol text, so state the reproducibility limits explicitly.",
+            "Optimality convention: report cost minimization only for the frozen "
+            "parameter point under the recorded solver status and optimality gap. Do not "
+            "claim duals, binding-constraint certificates, or objective stability; a "
+            "capacity-perturbed instance is a different instance and its objective is "
+            "not comparable.",
+            "Augmentation convention: executed augmentation experiments are appended "
+            "after the source paper. They use perturbed instances or different "
+            "replication/seed protocols and are not numerically comparable to source "
+            "headline values. No augmentation result revises, upgrades, or invalidates a "
+            "source claim, and the source release is unchanged. When "
+            "`augmentation_appendix_record_count` is positive, do not claim that no "
+            "cost, capacity, initial-inventory, or replication/seed sensitivity analysis "
+            "was run; state that source-stage analyses are limited and that executed "
+            "augmentation results are listed separately.",
         )
     return ()
 
@@ -285,13 +339,14 @@ def _derived_mixed_records(
     def add(
         evidence_id: str,
         key: str,
-        value: float | int,
-        value_unit: str,
+        value: float | int | str,
+        value_unit: str | None,
         experiment_id: str,
         artifact_path: Path,
         artifact_hash: str,
         source_field: str,
         source_file: str,
+        derivation: str = "frozen mixed plan/forecast/plan artifact",
     ) -> None:
         display = f"{value:.10g}" if isinstance(value, float) else str(value)
         record = EvidenceRecord(
@@ -310,13 +365,15 @@ def _derived_mixed_records(
                 "kind": "competition_derived",
                 "source_file": source_file,
                 "source_sha256": artifact_hash,
-                "derivation": "frozen mixed plan/forecast/plan artifact",
+                "derivation": derivation,
             },
         )
         records.append(record)
 
     forecast_experiment = str(release["forecast_experiment_id"])
     optimization_experiment = str(release["optimization_experiment_id"])
+    production_terms_total = 0.0
+    holding_terms_total = 0.0
     for index, period in enumerate(periods):
         add(
             f"ev-comp-capacity-{period}",
@@ -384,6 +441,50 @@ def _derived_mixed_records(
             f"planned_inventory[{index}]",
             str(plan_envelope["payload_path"]),
         )
+        production_term = float(production_costs[index]) * float(
+            plan_artifact["production"][index]
+        )
+        holding_term = float(holding_costs[index]) * float(
+            plan_artifact["planned_inventory"][index]
+        )
+        production_terms_total += production_term
+        holding_terms_total += holding_term
+        add(
+            f"ev-comp-production-cost-term-{period}",
+            f"competition.plan.production_cost_term.{period}",
+            production_term,
+            "cost_units",
+            optimization_experiment,
+            plan_payload_path,
+            plan_artifact_hash,
+            f"production_costs[{index}] * production[{index}]",
+            str(plan_envelope["payload_path"]),
+            "production cost coefficient times recorded production",
+        )
+        add(
+            f"ev-comp-holding-cost-term-{period}",
+            f"competition.plan.holding_cost_term.{period}",
+            holding_term,
+            "cost_units",
+            optimization_experiment,
+            plan_payload_path,
+            plan_artifact_hash,
+            f"holding_costs[{index}] * planned_inventory[{index}]",
+            str(plan_envelope["payload_path"]),
+            "holding cost coefficient times recorded month-end inventory",
+        )
+    add(
+        "ev-comp-objective-recomputed",
+        "competition.plan.objective_recomputed",
+        production_terms_total + holding_terms_total,
+        "cost_units",
+        optimization_experiment,
+        plan_payload_path,
+        plan_artifact_hash,
+        "sum of production and holding cost terms",
+        str(plan_envelope["payload_path"]),
+        "sum over periods of production and holding cost terms",
+    )
     add(
         "ev-comp-initial-inventory",
         "competition.plan.initial_inventory",
@@ -395,7 +496,148 @@ def _derived_mixed_records(
         "spec.initial_inventory",
         "mixed/plan.json",
     )
+
+    simulation_experiment = str(release["simulation_experiment_id"])
+    simulation_result = (
+        paths.experiment_dir(simulation_experiment)
+        / "artifacts"
+        / "mixed_simulation_result.json"
+    )
+    if simulation_result.exists():
+        payload = json.loads(simulation_result.read_text(encoding="utf-8"))
+        replications = payload.get("replications")
+        if isinstance(replications, list) and len(replications) >= 2:
+            simulation_hash = sha256_file(simulation_result)
+            source_file = simulation_result.relative_to(paths.root).as_posix()
+            shortages = [
+                float(item["total_shortage"])
+                for item in replications
+                if "total_shortage" in item
+            ]
+            fill_rates = [
+                float(item["fill_rate"])
+                for item in replications
+                if "fill_rate" in item
+            ]
+            n = len(replications)
+            any_shortage = float(
+                payload.get(
+                    "any_shortage_probability",
+                    sum(1 for value in shortages if value > 0) / n,
+                )
+            )
+            demands = [
+                float(period["simulated_demand"])
+                for item in replications
+                for period in item.get("periods", [])
+                if "simulated_demand" in period
+            ]
+
+            def add_simulation(
+                evidence_id: str,
+                key: str,
+                value: float | int,
+                value_unit: str | None,
+                source_field: str,
+                derivation: str,
+            ) -> None:
+                add(
+                    evidence_id,
+                    key,
+                    value,
+                    value_unit,
+                    simulation_experiment,
+                    simulation_result,
+                    simulation_hash,
+                    source_field,
+                    source_file,
+                    derivation,
+                )
+
+            if shortages:
+                add_simulation(
+                    "ev-comp-simulation-shortage-se",
+                    "mixed.simulation.shortage.standard_error",
+                    statistics.stdev(shortages) / math.sqrt(len(shortages)),
+                    payload.get("unit"),
+                    "derived from replications[].total_shortage",
+                    "sample standard deviation of replication-level total shortage "
+                    "divided by sqrt(n)",
+                )
+            if fill_rates:
+                add_simulation(
+                    "ev-comp-simulation-fill-rate-se",
+                    "mixed.simulation.service.fill_rate.standard_error",
+                    statistics.stdev(fill_rates) / math.sqrt(len(fill_rates)),
+                    None,
+                    "derived from replications[].fill_rate",
+                    "sample standard deviation of replication-level fill rate divided "
+                    "by sqrt(n)",
+                )
+            add_simulation(
+                "ev-comp-simulation-any-shortage-se",
+                "mixed.simulation.any_shortage_probability.standard_error",
+                math.sqrt(any_shortage * (1.0 - any_shortage) / n),
+                None,
+                "derived from any_shortage_probability",
+                "normal-approximation standard error sqrt(p*(1-p)/n)",
+            )
+            if demands:
+                add_simulation(
+                    "ev-comp-simulation-min-demand",
+                    "mixed.simulation.min_simulated_demand",
+                    min(demands),
+                    payload.get("unit"),
+                    "derived from replications[].periods[].simulated_demand",
+                    "minimum realized simulated demand across all replications",
+                )
+            master_seed = payload.get("master_seed")
+            if master_seed is not None:
+                add_simulation(
+                    "ev-comp-simulation-master-seed",
+                    "mixed.simulation.master_seed",
+                    master_seed,
+                    None,
+                    "master_seed",
+                    "recorded master seed from the validated simulation artifact",
+                )
     return records
+
+
+def _derived_fold_mean_records(
+    records: dict[str, EvidenceRecord],
+) -> list[EvidenceRecord]:
+    derived: list[EvidenceRecord] = []
+    now = datetime.now(UTC).replace(microsecond=0)
+    for record in records.values():
+        if not record.key.endswith(".folds"):
+            continue
+        values = [float(token) for token in _NUMBER_RE.findall(record.display_value)]
+        if len(values) < 2:
+            continue
+        mean = statistics.fmean(values)
+        derived.append(
+            EvidenceRecord(
+                evidence_id=f"{record.evidence_id}-fold-mean",
+                key=record.key.removesuffix(".folds") + ".fold_mean",
+                raw_value=mean,
+                display_value=f"{mean:.10g}",
+                unit=None,
+                experiment_id=record.experiment_id,
+                artifact_path=record.artifact_path,
+                artifact_hash=record.artifact_hash,
+                source_field=f"derived mean of {record.source_field}",
+                validation_reports=["competition_context"],
+                verified_at=now,
+                provenance={
+                    "kind": "competition_derived",
+                    "source_file": record.artifact_path,
+                    "source_sha256": record.artifact_hash,
+                    "derivation": "arithmetic mean of recorded fold values",
+                },
+            )
+        )
+    return derived
 
 
 def _entry(record: EvidenceRecord) -> CatalogEntry:
@@ -428,7 +670,12 @@ def _uncertainty_prefixes(entries: list[CatalogEntry]) -> set[str]:
     return lows & highs
 
 
-def load_context(paths: ProjectPaths) -> EvidenceContext:
+def load_context(
+    paths: ProjectPaths,
+    *,
+    extra_records: list[EvidenceRecord] | None = None,
+    augmentation_id: str | None = None,
+) -> EvidenceContext:
     config = load_project_config(paths)
     if config.state is not ProjectState.RELEASED:
         raise CompetitionContextError(
@@ -457,19 +704,27 @@ def load_context(paths: ProjectPaths) -> EvidenceContext:
         for record in index.records.values()
         if record.experiment_id not in release_experiment_ids
     ]
-    derived_records = _derived_mixed_records(paths, release)
+    derived_records = [
+        *_derived_mixed_records(paths, release),
+        *_derived_fold_mean_records(index.records),
+    ]
+    extra = list(extra_records or [])
     selected_records = [
         *derived_records,
         *release_records,
         *other_records,
     ][:MAX_CATALOG_RECORDS]
     entries = [_entry(record) for record in selected_records]
-    total_evidence_count = len(index.records) + len(derived_records)
-    catalog_truncated = total_evidence_count > len(entries)
+    total_evidence_count = len(index.records) + len(derived_records) + len(extra)
+    catalog_truncated = total_evidence_count > len(entries) + len(extra)
 
+    simulation_experiment = release.get("simulation_experiment_id")
     counts: dict[str, int] = {}
     for entry in entries:
-        counts[entry.experiment_id] = counts.get(entry.experiment_id, 0) + 1
+        owner = entry.experiment_id
+        if simulation_experiment and entry.key.startswith("mixed.simulation."):
+            owner = str(simulation_experiment)
+        counts[owner] = counts.get(owner, 0) + 1
     labels = {experiment_id: (label, task) for experiment_id, label, task in experiment_rows}
     experiment_ids = sorted(set(counts) | release_experiment_ids)
     experiments = tuple(
@@ -483,7 +738,15 @@ def load_context(paths: ProjectPaths) -> EvidenceContext:
     )
 
     metric_records = sum(1 for entry in entries if entry.key.startswith("metrics."))
-    unavailable = sum(1 for entry in entries if entry.numeric)
+    prefix_units: dict[str, set[str | None]] = {}
+    for entry in entries:
+        if not entry.numeric:
+            continue
+        prefix = entry.key.rsplit(".", 1)[0] if "." in entry.key else entry.key
+        prefix_units.setdefault(prefix, set()).add(entry.unit)
+    metric_bar_prefixes = sum(
+        1 for units in prefix_units.values() if len(units) == 1
+    )
     uncertainty = len(_uncertainty_prefixes(entries))
     available_tables = {
         TableTemplate.METRIC_COMPARISON.value: metric_records,
@@ -492,7 +755,7 @@ def load_context(paths: ProjectPaths) -> EvidenceContext:
     }
     available_figures = {
         FigureTemplate.PIPELINE_SCHEMATIC.value: len(experiments),
-        FigureTemplate.METRIC_BAR.value: unavailable,
+        FigureTemplate.METRIC_BAR.value: metric_bar_prefixes,
         FigureTemplate.UNCERTAINTY.value: uncertainty,
     }
 
@@ -510,6 +773,11 @@ def load_context(paths: ProjectPaths) -> EvidenceContext:
             [claim.claim_id, claim.status, claim.evidence_ids] for claim in claims
         ],
         "model_facts": list(_model_facts(release)),
+        "extra_evidence": [
+            [record.evidence_id, record.key, record.display_value, record.unit]
+            for record in extra
+        ],
+        "augmentation_id": augmentation_id,
     }
     context_hash = hashlib.sha256(
         json.dumps(hash_payload, sort_keys=True, separators=(",", ":")).encode(
@@ -531,6 +799,9 @@ def load_context(paths: ProjectPaths) -> EvidenceContext:
         available_figures=available_figures,
         model_facts=_model_facts(release),
         derived_records=tuple(derived_records),
+        appendix_records=tuple(extra),
+        extra_evidence_ids=tuple(record.evidence_id for record in extra),
+        augmentation_id=augmentation_id,
         total_evidence_count=total_evidence_count,
         catalog_truncated=catalog_truncated,
     )
