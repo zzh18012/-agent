@@ -72,13 +72,19 @@ def route_text(
     if problem_spec is None:
         try:
             problem_spec = ProblemAnalyst(model).analyze(
-                problem_text, problem_id=problem_id
+                problem_text,
+                problem_id=problem_id,
+                diagnostic_dir=output_dir,
             )
         except Exception as exc:
             raise _wrap_output_error(exc) from exc
     problem_spec_hash = _hash_spec(problem_spec)
     try:
-        extraction = SignalExtractor(model).extract(problem_text, problem_spec)
+        extraction = SignalExtractor(model).extract(
+            problem_text,
+            problem_spec,
+            diagnostic_dir=output_dir,
+        )
     except Exception as exc:
         raise _wrap_output_error(exc) from exc
     decision = route_problem_spec(

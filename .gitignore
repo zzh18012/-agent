@@ -31,3 +31,4 @@ routing_benchmark/runs/
 # Historical blind benchmark runtime artifacts
 benchmarks/historical/*/
 benchmarks/sources/*/
+benchmarks/remediation/

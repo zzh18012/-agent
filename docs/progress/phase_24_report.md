@@ -231,3 +231,142 @@ artifact immutability.
 - `07ab08d feat(phase-24.1): add historical blind benchmark` (progress report)
 
 No push. Stop after Phase 24.1; do not start Phase 24.2.
+
+# Phase 24.R1 — Router Robustness Remediation
+
+## 1. Scope
+
+This remediation only hardens the Problem Router structured-output path. It does not add
+computational geometry, active search, directional-source modeling, a simulator adapter,
+a new TaskFamily, solver, or DAG infrastructure. The burned B fixture is used only as a
+regression fixture; it is not a new blind attempt.
+
+## 2. Root cause
+
+Phase 24.1 used PydanticAI `Agent[..., ProblemSignalExtraction]` over the DeepSeek
+OpenAI-compatible Chat Completions transport. The model output was handled as a tool call;
+on the official B statement the response contained a JSON object followed by extra
+characters and failed with `Invalid JSON: trailing characters`, exhausting the agent
+retries. The router did not distinguish syntax, schema, semantic, truncation, or empty
+output failures.
+
+## 3. New structured-output path
+
+A minimal helper `mmos.agents.structured.request_structured` now:
+
+- uses the existing OpenAI-compatible Chat Completions transport with
+  `response_format={"type": "json_object"}` and `temperature=0`;
+- constructs the JSON Schema from the existing Pydantic models (`ProblemSignals`,
+  `ProblemSignalExtraction`, `ProblemSpec`, `RoutingDecision`) rather than maintaining
+  handwritten schemas;
+- performs syntax, schema, and semantic validation in that order;
+- records every attempt to `structured_attempts.jsonl` and raw local diagnostics under
+  `structured_raw/`;
+- uses bounded, error-aware retries (maximum 3) with deterministic repair instructions;
+- never guesses or repairs malformed JSON.
+
+`ProblemAnalyst` and `SignalExtractor` use this path for real provider models; `TestModel`
+continues to use the existing PydanticAI path for offline tests.
+
+Transport after: `openai_chat_completions` (DeepSeek-compatible), structured mode
+`json_object`. Provider: `deepseek`; model: `deepseek-chat`.
+
+## 4. Validation and failure taxonomy
+
+- Syntax: one JSON object after whitespace; explicit safe ```json fence unwrap only when
+  the entire content is one fenced object.
+- Reject trailing prose, multiple objects, empty content, truncated content, non-objects.
+- Schema: full Pydantic validation; field-level errors are recorded.
+- Semantic: signal subproblem ids must exactly match the `ProblemSpec`, with no duplicates
+  or missing/extra ids.
+- Failure codes: `EMPTY_OUTPUT`, `TRUNCATED_OUTPUT`, `NON_JSON_OUTPUT`,
+  `TRAILING_CONTENT`, `MULTIPLE_OBJECTS`, `SCHEMA_INVALID`, `SEMANTIC_INVALID`,
+  `PROVIDER_ERROR`, `RETRY_EXHAUSTED`.
+- Problem text is wrapped as data and the signal prompt explicitly states that embedded
+  instructions are not system instructions.
+
+Schema hashes:
+
+```text
+ProblemSignals          7686e251a30dbb89461bf6cd83f3e0fdc31aa58d96ba0aec818829f734081250
+ProblemSignalExtraction cdafc21982aba3413fd5c7fdbf6bb5c76d73d97a7419c2305c50ed860c47ee09
+RoutingDecision         f3da6f47d1dace4be926fa01fd07c3f40dd6f0c0a9cd026c36d0f39529b72918
+```
+
+## 5. B burned-fixture regression (live DeepSeek)
+
+- Source benchmark: `cumcm-2026-blind-03` (problem B, burned)
+- Regression artifact: `benchmarks/remediation/router/r1-b-fixture-full-3/`
+- Before: `RoutingOutputError: structured routing output failed; ProblemSignalExtraction:
+  Invalid JSON: trailing characters`.
+- After: structured extraction completed without transport/parser failure.
+- Attempts: 2 total (`problem_spec` attempt 1 passed; `problem_signals` attempt 1 passed);
+  no retries required.
+- Provider/model: `deepseek` / `deepseek-chat`
+- Finish reasons: both `stop`; prompt/completion tokens recorded in diagnostics.
+- Final route: `SINGLE_TASK` / `optimization` / `READY_FOR_SINGLE_TASK`; routing audit
+  passed. This is a Router transport result, not a new blind scientific result.
+- Original `cumcm-2026-blind-03` result hash remains
+  `8149a4d67f91769a13b28c01e22d50c8bff5957af73f77fa5773711ec2f5a700`; it was not
+  rewritten.
+
+The B route remains a capability question: the existing optimization scope is the
+0/1-knapsack MILP slice, while B's explicit requirements include computational geometry,
+active sensing, multi-target robot search, directional sources, and an official HTTP
+simulator. Those gaps remain recorded and are not implemented here.
+
+## 6. Frozen 24-case Router benchmark
+
+The Phase 21.1 suite still passes with no regression:
+
+```text
+suite: routing-suite-v1
+manifest_hash: 63cd847101c7c736a084b4d943b4ce59ce1715cd436870e1451a0732ac40beae
+status_accuracy: 1.000 / 1.000
+single_task_accuracy: 1.000 / 1.000
+multi_task_recall: 1.000 / 1.000
+ambiguous_detection: 1.000 / 1.000
+unsupported_detection: 1.000 / 1.000
+critical_unsafe: 0 / 0
+stability: 1.000
+```
+
+Artifacts: `benchmarks/remediation/router/r1-24case/`.
+
+## 7. Tests
+
+New `tests/test_structured_output.py` covers valid JSON, safe fenced JSON, trailing prose,
+multiple objects, blank output, truncation and increased retry budget, schema field errors,
+semantic errors, retry exhaustion, diagnostics, and problem-text-as-data isolation.
+`tests/test_routing.py` adds semantic validation for missing/duplicate subproblem ids.
+Existing ProblemAnalyst and routing tests remain green.
+
+Full verification:
+
+- `uv run pytest`: **345 passed, 3 deselected**
+- `uv run ruff check .`: passed
+- `uv run pyright`: 0 errors, 0 warnings
+
+## 8. Bugs fixed
+
+- DeepSeek base URL was omitted when `MMOS_LLM_BASE_URL` was empty; direct structured
+  client now falls back to `https://api.deepseek.com`.
+- Tool-call structured output was brittle on trailing content; replaced for real providers
+  with JSON-object mode plus strict parsing and retry taxonomy.
+- Signal semantics could accept missing/duplicate subproblem ids after schema validation;
+  now rejected.
+- Empty and truncated outputs are now classified and retried instead of collapsing into a
+  generic JSON error.
+
+## 9. Remaining capability gaps
+
+Router transport robustness is repaired, but the scientific capability gaps from Phase
+24.1 remain: computational geometry/bearing localization, active search/path planning,
+multi-target sequencing, directional-source modeling, official simulator integration,
+and the limited optimization scope. No new capability was added in R1.
+
+## 10. Commit
+
+Phase 24.R1 commit: `fix(phase-24.r1): harden structured problem routing`
+
+No push; stop after R1. Do not start Phase 24.2 or a fresh blind benchmark.

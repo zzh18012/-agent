@@ -1,6 +1,10 @@
+from pathlib import Path
+
 from pydantic_ai import Agent
 from pydantic_ai.models import Model
+from pydantic_ai.models.test import TestModel
 
+from mmos.agents.structured import request_structured
 from mmos.schemas.problem import ProblemSpec
 
 SYSTEM_PROMPT = """\
@@ -29,18 +33,38 @@ Rules:
 
 class ProblemAnalyst:
     def __init__(self, model: Model | str) -> None:
-        self._agent: Agent[None, ProblemSpec] = Agent(
-            model,
-            output_type=ProblemSpec,
-            system_prompt=SYSTEM_PROMPT,
-            retries=2,
-        )
+        self._agent: Agent[None, ProblemSpec] | None
+        if isinstance(model, TestModel):
+            self._agent = Agent(
+                model,
+                output_type=ProblemSpec,
+                system_prompt=SYSTEM_PROMPT,
+                retries=2,
+            )
+        else:
+            self._agent = None
 
-    def analyze(self, problem_text: str, *, problem_id: str) -> ProblemSpec:
+    def analyze(
+        self,
+        problem_text: str,
+        *,
+        problem_id: str,
+        diagnostic_dir: Path | None = None,
+    ) -> ProblemSpec:
         prompt = (
             f"The project identifier is {problem_id!r}. Use exactly this value for problem_id.\n\n"
             f"Problem statement:\n\n{problem_text}"
         )
-        result = self._agent.run_sync(prompt)
-        # The identifier is assigned by the system, not trusted to the model.
-        return result.output.model_copy(update={"problem_id": problem_id})
+        if self._agent is not None:
+            result = self._agent.run_sync(prompt)
+            # The identifier is assigned by the system, not trusted to the model.
+            return result.output.model_copy(update={"problem_id": problem_id})
+        result = request_structured(
+            model_type=ProblemSpec,
+            component="problem_spec",
+            system_prompt=SYSTEM_PROMPT,
+            input_text=prompt,
+            diagnostic_dir=diagnostic_dir,
+            max_tokens=8192,
+        )
+        return result.value.model_copy(update={"problem_id": problem_id})

@@ -1,8 +1,11 @@
 from pathlib import Path
 
+import pytest
+
 from mmos.routing.audit import audit_routing
 from mmos.routing.benchmark import load_routing_manifest
 from mmos.routing.policy import route_problem_spec
+from mmos.routing.signals import validate_signal_extraction
 from mmos.schemas.problem import ProblemSpec, SubProblem
 from mmos.schemas.routing import (
     DependencyHint,
@@ -369,3 +372,19 @@ def test_routing_manifest_is_frozen_and_well_formed() -> None:
 def test_task_family_enum_still_supported() -> None:
     assert TaskFamily.MULTI_OBJECTIVE in TaskFamily
     assert ProjectState.RELEASED.value == "RELEASED"
+
+
+def test_signal_semantics_reject_missing_and_duplicate_ids() -> None:
+    problem = make_problem(("q1", []), ("q2", []))
+    missing = make_extraction(("q1", ProblemSignals()))
+    with pytest.raises(ValueError, match="missing"):
+        validate_signal_extraction(missing, problem)
+    duplicate = make_extraction(
+        ("q1", ProblemSignals()),
+        ("q1", ProblemSignals()),
+        ("q2", ProblemSignals()),
+    )
+    with pytest.raises(ValueError, match="duplicate"):
+        validate_signal_extraction(duplicate, problem)
+    valid = make_extraction(("q1", ProblemSignals()), ("q2", ProblemSignals()))
+    validate_signal_extraction(valid, problem)
