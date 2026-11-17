@@ -370,3 +370,157 @@ and the limited optimization scope. No new capability was added in R1.
 Phase 24.R1 commit: `fix(phase-24.r1): harden structured problem routing`
 
 No push; stop after R1. Do not start Phase 24.2 or a fresh blind benchmark.
+
+# Phase 24.2 — Fresh Historical Blind Benchmark #2
+
+## 1. Freshness preflight and burn registry
+
+Before downloading or opening 2025 A/B/C, a freshness preflight scanned local historical
+benchmark records, the burn registry, and runtime project problem specs. The pre-reveal
+registry had no 2025 labels burned:
+
+```text
+competition: CUMCM
+year: 2025
+burned_labels: []
+preflight_registry_hash: bcc23f268d53d185b54d0b3f66906d9ae53acae4309f7488db2004b4b43c549a
+```
+
+After the run, B is recorded as burned:
+
+```text
+burned_labels: ["B"]
+post-run registry hash: 2700990ab755d40a44739f4c9e8f725b3f2959a897ddf4e1e2f1fb4df951b7d8
+```
+
+2026 A/B/C remain burned from Phase 24.1 and were not reused. No 2025 solution, lecture,
+award paper, blog, or third-party problem mirror was accessed. Training-contamination
+caveat remains:
+
+```text
+operational_blind = true
+training_contamination_verifiable = false
+```
+
+## 2. Official source and selection
+
+- Competition: 2025 CUMCM
+- Official source page: `https://www.mcm.edu.cn/`
+- Official archive URL:
+  `https://www.mcm.edu.cn/upload_cn/node/759/SvpohSGacdffe718bcaa3b6e835c03ae3461cab1.zip`
+- Archive SHA-256:
+  `cef6262c24ee3017bdab4ca255299c7b47b2700ad89fd773addde7e241e7e4de`
+- Archive size: `52,097,165` bytes
+- Source manifest hash:
+  `ab1c0df1e6a23e44d28b3e48ac2255981e9e267d41fc9bac8d45fb9a2d5fa258`
+
+Selection was committed before reveal:
+
+```text
+B  20beb19ac0e46515d393a5ff44354b32ab366d089420079fd77704e1726d8e26  primary
+C  ad096cd2a149baad448eab2633f27d26bea5a97d68236a780a49d4231b30afcd  reserve_1
+A  f1c3c2e5c296b959ccfd59aff40d5c84f739a3494abdf2bcd18a085f16bf77b4  reserve_2
+```
+
+Selection manifest hash:
+`875c8ac5b54eea21ff890d21fb9d0bce56e8cf923d98bb082c13ea9032394122`.
+Revealed problem: **B**, reveal hash
+`4df5b65919c4659e6fe20f96a85ff8cc8a842d571e88275997c65f290e0a594a`.
+Problem: B题 碳化硅外延层厚度的确定.
+
+Code freeze before reveal:
+
+- commit `6fcfa0059f24864f8bb9fcc6746cdfc812d54cbe`
+- clean worktree: `true`
+- freeze hash: `7e912ab6ec10f5c288ca35601e4c9b3beb7a80833ca800b4fc934d46933bc833`
+- tests: 349 passed, 3 deselected; ruff/pyright clean
+
+No infrastructure invalidation occurred; primary B was used. No reserve was used.
+
+## 3. Router result and diagnostics
+
+The Phase 24.R1 DeepSeek structured path ran successfully:
+
+- Provider/model: `deepseek` / `deepseek-chat`
+- Transport: OpenAI-compatible Chat Completions, `json_object`
+- `problem_spec` attempt 1: syntax/schema passed, finish `stop`, 8652 chars, 3378
+  completion tokens
+- `problem_signals` attempt 1: syntax/schema/semantic passed, finish `stop`, 2294 chars,
+  520 completion tokens
+- No retry or transport failure
+- Router decision: `AMBIGUOUS` / `BLOCKED_NEEDS_CLARIFICATION`
+- Router audit: passed
+- No TaskFamily required; subproblem routes q1/q2/q3 had no family
+- Clarifications included missing reliability metrics, unknown refractive-index handling,
+  multi-beam interference criteria, and dispersion-model requirements
+
+## 4. Requirements and Capability Fit
+
+ProblemSpec produced three explicit requirements:
+
+| ID | Requirement | Capability fit |
+|---|---|---|
+| q1 | Derive single-reflection interference thickness model | `UNSUPPORTED` |
+| q2 | Design thickness algorithm for measured spectra and assess reliability | `UNSUPPORTED` |
+| q3 | Derive multi-beam interference conditions and corrected thickness algorithm | `UNSUPPORTED` |
+
+Capability Fit uses the formal capability descriptors: tabular prediction/forecasting,
+0/1 knapsack MILP optimization, M/M/1 simulation, max-flow graph, and bi-objective binary
+portfolio. None matches optical thin-film interference, spectral analysis, physical
+parameter inversion, dispersion modeling, or multi-beam interference physics.
+
+Capability Fit verdict: **UNSUPPORTED**. All three requirements are unresolved. No
+modeling, experiments, evidence, paper, or Controller run was started. This is a
+scientific/capability block, not an infrastructure invalidation.
+
+Capability gaps (not implemented):
+
+- optical thin-film interference and Fresnel reflection modeling
+- spectral reflectance analysis and fringe-based thickness inversion
+- refractive-index dispersion/parameter estimation
+- multi-beam interference criteria and correction
+- reliability assessment for the physical measurement model
+
+## 5. Final verdict
+
+```text
+Protocol validity: VALID
+Blindness audit: PASS
+Prohibited access count: 0
+Human scientific intervention count: 0
+Router: PASS (structured transport)
+Capability Fit: UNSUPPORTED
+Scientific verdict: BLOCKED
+External competition quality: NOT_YET_ASSESSED
+```
+
+Benchmark result hash:
+`23170003a04ca75266d831634abf898d0ec6682da110d775355c89f77676a3ae`.
+Artifact root: `benchmarks/historical/cumcm-2025-blind-01/`.
+
+## 6. Artifacts and immutability
+
+- `cumcm-2025-blind-01` is `VALID` / `BLOCKED`; no paper or competition release.
+- 2026 `cumcm-2026-blind-03` result remains
+  `8149a4d67f91769a13b28c01e22d50c8bff5957af73f77fa5773711ec2f5a700`.
+- Phase 22 source release hash and augmentation evidence hash are unchanged.
+- Phase 23 controller replay remains `closed` / `scientific_gate_failed=true`.
+- No solution or post-contest analysis was opened.
+
+## 7. Tests
+
+- `uv run pytest`: **349 passed, 3 deselected**
+- `uv run ruff check .`: passed
+- `uv run pyright`: 0 errors, 0 warnings
+
+New tests cover capability-slice mismatch under a valid TaskFamily, partial/full
+requirement coverage, capability descriptor hash mutation, freshness preflight/burn
+registry, reserve restrictions, and failure-to-model behavior.
+
+## 8. Commits
+
+- `6881f8c feat(phase-24.2): add capability fit and freshness preflight`
+- `6fcfa00 chore(phase-24.2): ignore local burn registry`
+- Final Phase 24.2 commit after this report: `feat(phase-24.2): run second fresh historical blind benchmark`
+
+No push. Stop after Phase 24.2; do not start Phase 25 or implement capability gaps.
