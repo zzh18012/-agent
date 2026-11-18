@@ -831,3 +831,186 @@ Phase 24.3 coverage code: `11c1fa2 feat(phase-24.3): add capability coverage sna
 Final Phase 24.3 report commit: `feat(phase-24.3): run third fresh historical blind benchmark`
 
 No push. Stop after Phase 24.3.
+
+# Phase 24.C1 — Statistical Inference & Uncertainty Foundation
+
+## 1. Why this capability was added
+
+Phase 24 blind evidence after Router remediation:
+
+```text
+2025 B: 3 core requirements, 0 supported, 0 partial, 3 unsupported
+2024 B: 4 core requirements, 0 supported, 0 partial, 4 unsupported
+```
+
+Seven core requirements produced zero formally supported capability slices. C1 is the
+first benchmark-driven capability expansion, limited to statistical inference and local
+uncertainty.
+
+## 2. New TaskFamily and capability slices
+
+Added `TaskFamily.STATISTICAL_INFERENCE` with lifecycle support and Router signal fields:
+
+```text
+requires_parameter_inference
+requires_hypothesis_test
+requires_acceptance_sampling
+requires_nonlinear_parameter_estimation
+requires_parameter_uncertainty
+```
+
+Capability descriptors (hashes in `inference_capability_descriptors()`):
+
+- `statistical_inference.binomial_exact` — `80ac999a8eff833a7cf0f2b71508f5475ce4fdba3feba8429c3e489a0dc50692`
+- `statistical_inference.acceptance_single_binomial` — `a164f38eec840533b05a19f0e919873778a3ac7b2e0cf33544c566bb4524b7ca`
+- `statistical_inference.nonlinear_least_squares_registered_model` — `9a082a9dfa343c25b09def0e93badbe6b4d1d2511cb5061918481b51bd3023e3`
+- `statistical_inference.local_parameter_uncertainty` — `140d7dca33051bdf5844b87ea16b1966f519596cb0520984de38c1af942d1815`
+
+The family is not treated as a blanket capability; Capability Fit matches specific slices
+from requirement text and keeps unsupported production/optical requirements blocked.
+
+## 3. Mathematical contracts
+
+### Exact binomial inference
+
+- Exact binomial test (`scipy.stats.binomtest`)
+- Two-sided or directional alternative
+- Two-sided Clopper–Pearson confidence interval via beta quantiles
+- Evidence distinguishes `p_value` from CI; no “null proven true” language
+- Edge cases k=0, k=n, p0=0, p0=1 tested
+
+### Single-sampling acceptance plan
+
+- Attribute single sampling `(n, c)` under `BINOMIAL_LARGE_LOT`
+- Constraints: `P_accept(p_good) >= 1-alpha`, `P_accept(p_bad) <= beta`
+- Deterministic selection: minimum `n`, then minimum `c`
+- Fixed OC grid `0.00..1.00 step=0.05`
+- If no plan exists within `max_sample_size`, `feasible=false`; search bound is a contract
+- Validator independently sums the binomial terms and verifies minimum `n`/`c`
+
+### Registered-forward-model NLS
+
+- No `eval`, arbitrary formula, or LLM-generated code
+- Registry currently contains only `registered.exponential_decay`:
+  `y = amplitude * exp(-decay * x) + offset`
+- `scipy.optimize.least_squares`, explicit multi-start, all starts retained
+- Claims limited to validated local least-squares solution among declared starts
+- Jacobian rank/condition recorded; no global optimum claim
+- Local covariance only when loss is linear, `m > p`, and full column rank
+- Approximate local-linearization intervals; robust loss gets no covariance
+
+## 4. Live formal experiments
+
+Project: `projects/inference-c1-20261118/inference-c1-20261118-4eeba4`
+
+### Binomial
+
+- Experiment: `exp-c1-binomial`
+- k=18, n=100, p0=0.10, greater, 95%
+- p-value `0.010007279262125073`
+- exact CI `[0.11031122915326057, 0.26947708596681186]`
+- Artifact file SHA-256:
+  `ef9617d45f7e5782aeb3c87fe982a608409c3091485337517f9546922c7ee2c6`
+- 7 Evidence records registered; validator PASS
+
+### Acceptance sampling
+
+- Experiment: `exp-c1-acceptance`
+- p_good=0.02, p_bad=0.15, alpha=0.05, beta=0.10, max n=80
+- Selected `(n, c) = (34, 2)`
+- P_accept(good) `0.9698124693879533`; P_accept(bad) `0.09747379691192189`
+- Artifact file SHA-256:
+  `053e235bc1a97285bb4c04da2edda2ffdeb7cdeb4ed79318a613fc6a4ae53275`
+- 9 Evidence records registered; independent validator PASS
+
+### Nonlinear least squares
+
+- Experiment: `exp-c1-nls`
+- Forward model `registered.exponential_decay`
+- True synthetic parameters `[2.0, 0.5, 1.0]`
+- Estimated `[2.0, 0.5000000000000001, 1.0000000000000002]`
+- SSE `1.4791141972893971e-31`; RMSE `1.1102230246251565e-16`
+- 2 starts retained; selected start 0; Jacobian rank 3
+- Local linearization uncertainty available; approximate=true
+- Artifact file SHA-256:
+  `2405b6682457e7fea2939e81eae8dfb3edb3541784d3e6a68a0a2eb10fbd6167`
+- 20 Evidence records registered; validator PASS
+
+All values originate from validated artifacts; no LLM-authored numbers.
+
+## 5. Router regression and new inference suite
+
+- Frozen v1 `routing-suite-v1` remains 1.000/1.000 on all metrics, stability 1.000,
+  critical unsafe 0 (artifacts `benchmarks/remediation/capability-uplift/c1-routing-v1b/`).
+- Initial v1 rerun with an over-broad inference prompt incorrectly sent one simulation
+  case to inference; the prompt was tightened to exclude simulation/metric uncertainty.
+  The clean rerun restored 1.000.
+- New `routing-suite-v2-inference` has 8 cases, manifest hash
+  `3bbf72f13a580b0105b41015c6786fcc0744ed98685102a34e73cc426089dcae`.
+  Live runs: status accuracy 0.875/0.875, single-task 0.833/0.833, multi-task recall
+  1.0/1.0, ambiguous 1.0/1.0, unsupported 1.0/1.0, critical unsafe 0, stability 1.0.
+  One acceptance-plan case was classified `MULTI_TASK` because the model saw both
+  inference and a minimize-n decision; this is recorded, not hidden.
+
+## 6. Burned-benchmark capability uplift replay
+
+Re-routered frozen burned problem text (not new blind attempts) and re-ran Capability Fit
+with current descriptors. Canonical results were not modified.
+
+### 2024 B
+
+- Before: `UNSUPPORTED`; supported 0, partial 0, unsupported q1–q4.
+- After: `PARTIALLY_SUPPORTED`; q1/q4 partially supported via inference slices;
+  q2/q3 remain unsupported (production decision / multi-stage BOM).
+- Coverage by fully supported requirements: `0.0` before and after; partial requirements
+  increased from 0 to 2.
+- Disposition: `PARTIALLY_SUPPORTED`; first blocking stage: `capability_fit`.
+- Remaining gaps: multi-stage production inspection/disassembly/rework optimization,
+  sampling-uncertainty propagation into decisions, full acceptance-planning integration.
+
+### 2025 B
+
+- Before and after: `UNSUPPORTED`; q1/q2/q3 remain unsupported.
+- Reason: generic NLS exists, but there is no optical thin-film forward model, no
+  spectral/fringe inversion, and no multi-beam interference model.
+- Disposition: `UNSUPPORTED_CAPABILITY`; first blocking stage: `capability_fit`.
+- This is the correct boundary: generic parameter estimation does not fabricate a domain
+  forward model.
+
+## 7. Tests and verification
+
+- `uv run pytest`: **372 passed, 3 deselected**
+- `uv run ruff check .`: passed
+- `uv run pyright`: 0 errors, 0 warnings
+- Existing v1, R1 malformed-output, R2 disposition, and Capability Fit tests remain green.
+- New inference tests cover exact CI/test semantics, k=0/k=n boundaries, deterministic
+  minimum acceptance plans, no-feasible bound preservation, OC curve validation,
+  multi-start retention, local uncertainty eligibility, m<=p, robust loss, evidence
+  registration, and inference-vs-prediction/optimization routing.
+
+## 8. Real bugs fixed
+
+- Binomial runner originally used scipy directional CI while the validator used a
+  two-sided Clopper–Pearson interval; the contract now explicitly uses two-sided exact CI.
+- Non-identifiable `ParameterInterval` objects omitted optional fields; now explicitly
+  set to `None` and produce no CI.
+- Inference routing prompt initially over-triggered on simulation/metric uncertainty,
+  dropping frozen v1 accuracy; tightened and v1 rerun restored 1.000.
+- Capability Fit was treating the new TaskFamily as one broad descriptor; it now maps
+  requirements to four concrete inference slices.
+
+## 9. Limitations
+
+- Only four narrow inference slices; no Bayesian/MCMC, bootstrap framework, GLM, or
+  arbitrary forward-model code.
+- Acceptance sampling is binomial large-lot single sampling only.
+- NLS is local, not global; robust loss gets no local covariance.
+- Generic NLS does not provide an optical forward model or production-decision optimizer.
+- Uplift is measured as capability coverage, not a re-evaluation of blind results.
+
+## 10. Commit
+
+`feat(phase-24.c1): add statistical inference capabilities`
+
+No push. Stop after C1; do not open burned solutions, implement optical/BOM capabilities,
+start fresh blind #4, or start Phase 25.

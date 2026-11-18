@@ -85,6 +85,7 @@ def task_transition_table(
         TaskFamily.SIMULATION,
         TaskFamily.GRAPH,
         TaskFamily.MULTI_OBJECTIVE,
+        TaskFamily.STATISTICAL_INFERENCE,
     }:
         return OPTIMIZATION_NEXT_STATE
     raise ValueError(f"task family {task.value!r} has no lifecycle yet")
@@ -102,6 +103,7 @@ def task_order(
         TaskFamily.SIMULATION,
         TaskFamily.GRAPH,
         TaskFamily.MULTI_OBJECTIVE,
+        TaskFamily.STATISTICAL_INFERENCE,
     }:
         return OPTIMIZATION_ORDER
     raise ValueError(f"task family {task.value!r} has no lifecycle yet")

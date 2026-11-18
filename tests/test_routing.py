@@ -388,3 +388,73 @@ def test_signal_semantics_reject_missing_and_duplicate_ids() -> None:
         validate_signal_extraction(duplicate, problem)
     valid = make_extraction(("q1", ProblemSignals()), ("q2", ProblemSignals()))
     validate_signal_extraction(valid, problem)
+
+
+def test_statistical_inference_route() -> None:
+    decision = route(
+        make_problem(("q1", [])),
+        make_extraction(
+            (
+                "q1",
+                ProblemSignals(
+                    requires_parameter_inference=True,
+                    requires_hypothesis_test=True,
+                ),
+            )
+        ),
+    )
+    assert decision.status is RoutingStatus.SINGLE_TASK
+    assert decision.primary_task is TaskFamily.STATISTICAL_INFERENCE
+    assert decision.execution_status is ExecutionStatus.READY_FOR_SINGLE_TASK
+
+
+def test_inference_does_not_absorb_prediction_or_optimization() -> None:
+    prediction = route(
+        make_problem(("q1", [])),
+        make_extraction(
+            (
+                "q1",
+                ProblemSignals(
+                    has_supervised_target=True,
+                    target_description="future class label",
+                ),
+            )
+        ),
+    )
+    assert prediction.primary_task is TaskFamily.PREDICTION
+    optimization = route(
+        make_problem(("q1", [])),
+        make_extraction(
+            (
+                "q1",
+                ProblemSignals(
+                    has_decision_variables=True,
+                    has_hard_constraints=True,
+                    objective_count=1,
+                ),
+            )
+        ),
+    )
+    assert optimization.primary_task is TaskFamily.OPTIMIZATION
+
+
+def test_inference_and_optimization_multi_task() -> None:
+    decision = route(
+        make_problem(("q1", []), ("q2", ["q1"])),
+        make_extraction(
+            ("q1", ProblemSignals(requires_parameter_inference=True)),
+            (
+                "q2",
+                ProblemSignals(
+                    has_decision_variables=True,
+                    has_hard_constraints=True,
+                    objective_count=1,
+                ),
+            ),
+        ),
+    )
+    assert decision.status is RoutingStatus.MULTI_TASK
+    assert set(decision.required_task_families) == {
+        TaskFamily.STATISTICAL_INFERENCE,
+        TaskFamily.OPTIMIZATION,
+    }

@@ -405,3 +405,29 @@ def test_freshness_preflight_burns_revealed_labels_and_blocks_all_burned(
         freshness_preflight(
             tmp_path, competition="CUMCM", year=2025, labels=["A", "B", "C"], now=NOW
         )
+
+
+def test_inference_capability_slices_are_not_family_wide() -> None:
+    from mmos.historical_benchmark.capabilities import (
+        inference_capability_descriptors,
+    )
+
+    descriptors = inference_capability_descriptors()
+    assert {descriptor.capability_id for descriptor in descriptors} == {
+        "statistical_inference.binomial_exact",
+        "statistical_inference.acceptance_single_binomial",
+        "statistical_inference.nonlinear_least_squares_registered_model",
+        "statistical_inference.local_parameter_uncertainty",
+    }
+    assert all(descriptor.descriptor_hash for descriptor in descriptors)
+    decision = _decision(TaskFamily.STATISTICAL_INFERENCE, requirement_ids=["q1", "q2"])
+    fit = assess_capability_fit(
+        decision,
+        [
+            _requirement("q1", "design a single sampling acceptance inspection plan"),
+            _requirement("q2", "optimize a multi-stage production line"),
+        ],
+    )
+    assert fit.verdict is CapabilityVerdict.PARTIALLY_SUPPORTED
+    assert fit.supported == ["q1"]
+    assert fit.unsupported == ["q2"]

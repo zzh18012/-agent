@@ -24,6 +24,7 @@ _FAMILY_RANK = {
     TaskFamily.GRAPH: 1,
     TaskFamily.OPTIMIZATION: 2,
     TaskFamily.MULTI_OBJECTIVE: 2,
+    TaskFamily.STATISTICAL_INFERENCE: 0,
 }
 
 _CAPABILITY_SCOPE = {
@@ -57,6 +58,11 @@ _CAPABILITY_SCOPE = {
         "bi-objective binary project-portfolio epsilon-constraint",
         ["two maximize objectives, binary portfolio, one budget constraint"],
     ),
+    TaskFamily.STATISTICAL_INFERENCE: (
+        CapabilityLevel.PARTIAL,
+        "exact binomial inference, single-sampling plans, registered forward-model NLS",
+        ["four narrow inference slices only"],
+    ),
 }
 
 
@@ -67,9 +73,7 @@ def _subproblem_families(
     if signals.unsupported_requirements:
         return [], ["unsupported_requirement"]
     families: list[TaskFamily] = []
-    graph_native = (
-        signals.graph_native_problem and signals.graph_structure_is_primary
-    )
+    graph_native = signals.graph_native_problem and signals.graph_structure_is_primary
     if graph_native:
         families.append(TaskFamily.GRAPH)
         reasons.extend(["graph_native_problem", "graph_structure_primary"])
@@ -86,15 +90,11 @@ def _subproblem_families(
             and not signals.objective_preference_given
         ):
             families.append(TaskFamily.MULTI_OBJECTIVE)
-            reasons.extend(
-                ["decision_variables", "hard_constraints", "tradeoff_objectives"]
-            )
+            reasons.extend(["decision_variables", "hard_constraints", "tradeoff_objectives"])
         else:
             families.append(TaskFamily.OPTIMIZATION)
             reasons.extend(["decision_variables", "hard_constraints", "single_objective"])
-            if signals.objective_count >= 2 and not (
-                signals.objectives_simultaneously_optimized
-            ):
+            if signals.objective_count >= 2 and not (signals.objectives_simultaneously_optimized):
                 reasons.append("threshold_objective_as_constraint")
     if (
         signals.stochastic_process_evolution
@@ -108,6 +108,15 @@ def _subproblem_families(
     elif signals.has_supervised_target:
         families.append(TaskFamily.PREDICTION)
         reasons.append("supervised_target")
+    if (
+        signals.requires_parameter_inference
+        or signals.requires_hypothesis_test
+        or signals.requires_acceptance_sampling
+        or signals.requires_nonlinear_parameter_estimation
+        or signals.requires_parameter_uncertainty
+    ):
+        families.append(TaskFamily.STATISTICAL_INFERENCE)
+        reasons.append("statistical_inference_requested")
     if signals.reported_evaluation_metrics and families == [TaskFamily.PREDICTION]:
         reasons.append("evaluation_metrics_not_objectives")
     families = sorted(set(families), key=lambda family: (_FAMILY_RANK[family], family.value))
@@ -128,13 +137,13 @@ def _suggested_command(task: TaskFamily) -> str:
     mapping = {
         TaskFamily.PREDICTION: "mmos run <project> --target ... --feature ...",
         TaskFamily.FORECASTING: (
-            "mmos run <project> --target ... --feature ... --time-column ... "
-            "--horizon ..."
+            "mmos run <project> --target ... --feature ... --time-column ... --horizon ..."
         ),
         TaskFamily.OPTIMIZATION: "mmos optimize <project> <optimization_spec.json>",
         TaskFamily.SIMULATION: "mmos simulate <project> <simulation_spec.json>",
         TaskFamily.GRAPH: "mmos graph-run <project> <graph_spec.json>",
         TaskFamily.MULTI_OBJECTIVE: "mmos multi-optimize <project> <instance_spec.json>",
+        TaskFamily.STATISTICAL_INFERENCE: "mmos infer <project> <inference_spec.json>",
     }
     return mapping[task]
 
@@ -153,9 +162,7 @@ def route_problem_spec(
     model: str,
     git_commit: str = "unknown",
 ) -> RoutingDecision:
-    signals_by_id = {
-        item.subproblem_id: item.signals for item in extraction.subproblems
-    }
+    signals_by_id = {item.subproblem_id: item.signals for item in extraction.subproblems}
     subproblem_routes: list[SubproblemRoute] = []
     required: set[TaskFamily] = set()
     reasons: set[str] = set()
@@ -170,9 +177,7 @@ def route_problem_spec(
         if signals is None:
             signals = ProblemSignals(
                 insufficient_information=True,
-                missing_information=[
-                    f"no structured signals for {subproblem.subproblem_id}"
-                ],
+                missing_information=[f"no structured signals for {subproblem.subproblem_id}"],
             )
         families, sub_reasons = _subproblem_families(signals)
         family_by_subproblem[subproblem.subproblem_id] = families
@@ -208,8 +213,7 @@ def route_problem_spec(
     global_simulation = any(
         item.stochastic_process_evolution for item in signals_by_id.values()
     ) and any(
-        item.requires_replications_or_distributional_output
-        for item in signals_by_id.values()
+        item.requires_replications_or_distributional_output for item in signals_by_id.values()
     )
     if global_simulation and TaskFamily.SIMULATION not in required:
         required.add(TaskFamily.SIMULATION)
@@ -240,9 +244,7 @@ def route_problem_spec(
     clarifications = sorted(set(item for item in clarifications if item))
     unsupported = sorted(set(item for item in unsupported if item))
     required_families = _ordered_families(required)
-    insufficient = any(
-        item.insufficient_information for item in signals_by_id.values()
-    )
+    insufficient = any(item.insufficient_information for item in signals_by_id.values())
 
     if unsupported:
         status = RoutingStatus.UNSUPPORTED
@@ -273,9 +275,7 @@ def route_problem_spec(
         execution = ExecutionStatus.BLOCKED_PENDING_MIXED_DAG
         suggested = None
         capabilities = [_capability(family) for family in required_families]
-        ordered_hints = sorted(
-            dependency_hints, key=lambda pair: (pair[0].value, pair[1].value)
-        )
+        ordered_hints = sorted(dependency_hints, key=lambda pair: (pair[0].value, pair[1].value))
         reasons.add("mixed_task_dependency")
     elif len(required_families) == 1:
         status = RoutingStatus.SINGLE_TASK
@@ -305,9 +305,12 @@ def route_problem_spec(
         "problem_hash": problem_hash,
         "extraction": extraction.model_dump(mode="json"),
     }
-    routing_id = "route-" + hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()[:12]
+    routing_id = (
+        "route-"
+        + hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()[:12]
+    )
     return RoutingDecision(
         routing_id=routing_id,
         problem_hash=problem_hash,
@@ -317,8 +320,7 @@ def route_problem_spec(
         required_task_families=required_families,
         subproblem_routes=subproblem_routes,
         dependency_hints=[
-            DependencyHint(from_task=left, to_task=right)
-            for left, right in ordered_hints
+            DependencyHint(from_task=left, to_task=right) for left, right in ordered_hints
         ],
         reason_codes=sorted(reasons),
         clarifications_needed=clarifications,

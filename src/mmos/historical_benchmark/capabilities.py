@@ -61,6 +61,50 @@ _SHAPE_KEYWORDS: dict[TaskFamily, tuple[str, ...]] = {
         "tradeoff",
         "budget",
     ),
+    TaskFamily.STATISTICAL_INFERENCE: (
+        "estimate",
+        "infer",
+        "hypothesis",
+        "acceptance",
+        "sampling",
+        "parameter",
+        "confidence",
+    ),
+}
+
+_INFERENCE_SLICES = {
+    "statistical_inference.binomial_exact": (
+        "hypothesis",
+        "p-value",
+        "p value",
+        "confidence interval",
+        "信度",
+        "显著性",
+        "检验",
+    ),
+    "statistical_inference.acceptance_single_binomial": (
+        "acceptance",
+        "sampling",
+        "inspection",
+        "抽样",
+        "接收",
+        "拒收",
+        "抽检",
+    ),
+    "statistical_inference.nonlinear_least_squares_registered_model": (
+        "nonlinear",
+        "least squares",
+        "curve fitting",
+        "parameter estimation",
+        "拟合",
+        "参数估计",
+    ),
+    "statistical_inference.local_parameter_uncertainty": (
+        "uncertainty",
+        "standard error",
+        "parameter interval",
+        "不确定",
+    ),
 }
 
 _LIMIT_KEYWORDS = (
@@ -184,7 +228,102 @@ def capability_registry() -> dict[TaskFamily, CapabilityDescriptor]:
             regression_evidence=["tests/test_multi_objective.py"],
             known_limits=["two maximize objectives, binary portfolio, one budget constraint only"],
         ),
+        TaskFamily.STATISTICAL_INFERENCE: _descriptor(
+            capability_id="statistical_inference.foundation",
+            task_family=TaskFamily.STATISTICAL_INFERENCE.value,
+            supported_problem_shapes=[
+                "exact binomial inference",
+                "single-sampling acceptance plans",
+                "registered-forward-model nonlinear least squares",
+                "local parameter uncertainty",
+            ],
+            supported_input_types=["json inference spec", "registered forward model"],
+            supported_decision_types=[],
+            supported_constraint_types=["confidence level", "producer/consumer risk"],
+            runner="mmos.experiments.inference_runner",
+            validator="mmos.validation.inference",
+            regression_evidence=["tests/test_inference.py"],
+            known_limits=[
+                "no arbitrary forward-model code",
+                "no hypergeometric/double/sequential sampling",
+                "no global optimum claim",
+                "local linearization covariance only",
+            ],
+        ),
     }
+
+
+def inference_capability_descriptors() -> list[CapabilityDescriptor]:
+    return [
+        _descriptor(
+            capability_id="statistical_inference.binomial_exact",
+            task_family=TaskFamily.STATISTICAL_INFERENCE.value,
+            supported_problem_shapes=["exact binomial p-value and Clopper-Pearson CI"],
+            supported_input_types=["successes/trials/null_probability spec"],
+            supported_decision_types=[],
+            supported_constraint_types=["alternative", "confidence_level"],
+            runner="mmos.experiments.inference_runner.run_binomial_inference",
+            validator="mmos.validation.inference.validate_binomial_inference",
+            regression_evidence=["tests/test_inference.py"],
+            known_limits=["one binomial proportion; no Bayesian inference"],
+        ),
+        _descriptor(
+            capability_id="statistical_inference.acceptance_single_binomial",
+            task_family=TaskFamily.STATISTICAL_INFERENCE.value,
+            supported_problem_shapes=["attribute single-sampling plan (n,c), binomial large lot"],
+            supported_input_types=["good/bad defect rates, alpha, beta, max n"],
+            supported_decision_types=["minimum n then c"],
+            supported_constraint_types=["producer and consumer risk"],
+            runner="mmos.experiments.inference_runner.run_acceptance_sampling",
+            validator="mmos.validation.inference.validate_acceptance_sampling",
+            regression_evidence=["tests/test_inference.py"],
+            known_limits=["no finite-lot, double, multiple, sequential, or variables sampling"],
+        ),
+        _descriptor(
+            capability_id="statistical_inference.nonlinear_least_squares_registered_model",
+            task_family=TaskFamily.STATISTICAL_INFERENCE.value,
+            supported_problem_shapes=["registered forward model + observations"],
+            supported_input_types=["model id", "x/y arrays", "bounds", "explicit starts"],
+            supported_decision_types=[],
+            supported_constraint_types=["parameter bounds"],
+            runner="mmos.experiments.inference_runner.run_nls",
+            validator="mmos.validation.inference.validate_nls",
+            regression_evidence=["tests/test_inference.py"],
+            known_limits=["no arbitrary code/formula execution", "local solution only"],
+        ),
+        _descriptor(
+            capability_id="statistical_inference.local_parameter_uncertainty",
+            task_family=TaskFamily.STATISTICAL_INFERENCE.value,
+            supported_problem_shapes=["local linearization covariance for linear LS"],
+            supported_input_types=["validated NLS artifact"],
+            supported_decision_types=[],
+            supported_constraint_types=["m>p and full column rank"],
+            runner="mmos.experiments.inference_runner.run_nls",
+            validator="mmos.validation.inference.validate_nls",
+            regression_evidence=["tests/test_inference.py"],
+            known_limits=["approximate; unavailable for robust loss or rank deficiency"],
+        ),
+    ]
+
+
+def _inference_slice(requirement: ProblemRequirement) -> str | None:
+    text = _text_for(requirement)
+    matches = [
+        capability_id
+        for capability_id, keywords in _INFERENCE_SLICES.items()
+        if any(keyword in text for keyword in keywords)
+    ]
+    if not matches:
+        return None
+    for capability_id in (
+        "statistical_inference.local_parameter_uncertainty",
+        "statistical_inference.acceptance_single_binomial",
+        "statistical_inference.nonlinear_least_squares_registered_model",
+        "statistical_inference.binomial_exact",
+    ):
+        if capability_id in matches:
+            return capability_id
+    return matches[0]
 
 
 def _text_for(requirement: ProblemRequirement) -> str:
@@ -229,6 +368,22 @@ def assess_capability_fit(
             descriptor = registry.get(family)
             if descriptor is None:
                 failures.append(f"no descriptor for {family.value}")
+                continue
+            if family is TaskFamily.STATISTICAL_INFERENCE:
+                slice_id = _inference_slice(requirement)
+                if slice_id is None:
+                    failures.append(
+                        "statistical_inference.foundation: no matching formal inference slice"
+                    )
+                else:
+                    available.append(slice_id)
+                    evidence.update(
+                        [
+                            descriptor.runner,
+                            descriptor.validator,
+                            *descriptor.regression_evidence,
+                        ]
+                    )
                 continue
             ok, reason = _requirement_supported(requirement, family)
             if ok:
@@ -319,4 +474,5 @@ __all__ = [
     "assess_capability_fit",
     "capability_registry",
     "descriptor_hash",
+    "inference_capability_descriptors",
 ]

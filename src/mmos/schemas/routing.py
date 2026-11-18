@@ -45,6 +45,12 @@ class ProblemSignals(MMOSModel):
     graph_structure_is_primary: bool = False
     graph_native_problem: bool = False
 
+    requires_parameter_inference: bool = False
+    requires_hypothesis_test: bool = False
+    requires_acceptance_sampling: bool = False
+    requires_nonlinear_parameter_estimation: bool = False
+    requires_parameter_uncertainty: bool = False
+
     reported_evaluation_metrics: list[str] = Field(default_factory=list)
     insufficient_information: bool = False
     missing_information: list[str] = Field(default_factory=list)
@@ -112,9 +118,7 @@ class RoutingDecision(MMOSModel):
         else:
             if self.primary_task is not None:
                 raise ValueError("primary_task is only valid for SINGLE_TASK")
-        if self.status is RoutingStatus.MULTI_TASK and len(
-            set(self.required_task_families)
-        ) < 2:
+        if self.status is RoutingStatus.MULTI_TASK and len(set(self.required_task_families)) < 2:
             raise ValueError("MULTI_TASK requires at least two task families")
         if self.status is RoutingStatus.AMBIGUOUS and not self.clarifications_needed:
             raise ValueError("AMBIGUOUS requires clarifications_needed")

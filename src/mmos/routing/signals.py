@@ -25,6 +25,8 @@ TaskFamily definitions:
   replications, distributions, steady state, or transient behavior.
 - graph: graph topology/relations are the primary mathematical object (flow, path,
   cut, connectivity, matching, centrality).
+- statistical_inference: estimate unknown parameters/proportions or test hypotheses
+  from data; not prediction of future observations.
 
 Signal rules:
 - Report signals per subproblem, using exactly the subproblem ids in the ProblemSpec.
@@ -57,6 +59,20 @@ Signal rules:
   metaheuristics are outside the six supported paradigms. Set
   unsupported_requirements on those subproblems and do NOT relabel policy training as
   ordinary optimization or stochastic-gradient updates as a simulation study.
+- Statistical inference means estimating unknown parameters/proportions or testing
+  hypotheses from data, not predicting future observations. Do NOT set inference
+  signals for simulation configuration, replication summaries, prediction intervals,
+  metric confidence intervals, or descriptive validation of a model; those are
+  analysis/validation outputs. Set them only when an unknown population/model parameter
+  or proportion must be estimated from observed data, or an explicit hypothesis test
+  about such a parameter is requested. Set
+  requires_parameter_inference when the task asks for an unknown parameter; set
+  requires_hypothesis_test for null/alternative decisions; set
+  requires_acceptance_sampling for sampling inspection/acceptance plans; set
+  requires_nonlinear_parameter_estimation for fitting a nonlinear forward model; set
+  requires_parameter_uncertainty when parameter/proportion uncertainty is explicitly
+  requested. These signals do not by themselves imply optimization, prediction, or
+  forecasting.
 - Ordinary neural networks, gradient boosting, and regression used for supervised
   prediction/forecasting ARE supported. Do not mark standard neural forecaster or
   neural regressor fitting/inference as unsupported merely because it is a neural
@@ -92,6 +108,11 @@ has_uncertainty, time_structure, spatial_structure, graph_native, or any other k
         "requires_replications_or_distributional_output": false,
         "graph_structure_is_primary": false,
         "graph_native_problem": false,
+        "requires_parameter_inference": false,
+        "requires_hypothesis_test": false,
+        "requires_acceptance_sampling": false,
+        "requires_nonlinear_parameter_estimation": false,
+        "requires_parameter_uncertainty": false,
         "reported_evaluation_metrics": [],
         "insufficient_information": false,
         "missing_information": [],

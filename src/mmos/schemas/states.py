@@ -8,6 +8,7 @@ class TaskFamily(StrEnum):
     MULTI_OBJECTIVE = "multi_objective"
     SIMULATION = "simulation"
     GRAPH = "graph"
+    STATISTICAL_INFERENCE = "statistical_inference"
 
 
 SUPPORTED_TASKS = frozenset(
@@ -18,6 +19,7 @@ SUPPORTED_TASKS = frozenset(
         TaskFamily.SIMULATION,
         TaskFamily.GRAPH,
         TaskFamily.MULTI_OBJECTIVE,
+        TaskFamily.STATISTICAL_INFERENCE,
     }
 )
 
