@@ -524,3 +524,140 @@ registry, reserve restrictions, and failure-to-model behavior.
 - Final Phase 24.2 commit after this report: `feat(phase-24.2): run second fresh historical blind benchmark`
 
 No push. Stop after Phase 24.2; do not start Phase 25 or implement capability gaps.
+
+# Phase 24.R2 — Execution Disposition Semantics
+
+## 1. Problem
+
+The Router and Capability Fit were independent but had no deterministic reconciliation
+layer. The fresh 2025 B run exposed:
+
+```text
+Router: AMBIGUOUS / BLOCKED_NEEDS_CLARIFICATION
+Capability Fit: UNSUPPORTED
+```
+
+The actual meaning is: the requirements were extracted, but the formal capability
+registry has no executable/validatable path. It is not “ask the user to explain the
+problem.” R2 adds a separate, deterministic `ExecutionDisposition` after Router and
+Capability Fit.
+
+## 2. New disposition layer
+
+Added `mmos.historical_benchmark.disposition` and
+`ExecutionDispositionRecord`:
+
+```text
+READY
+NEEDS_CLARIFICATION
+PARTIALLY_SUPPORTED
+UNSUPPORTED_CAPABILITY
+BLOCKED_INVALID_INPUT
+BLOCKED_ROUTING_FAILURE
+BLOCKED_CONTRACT_INCONSISTENCY
+```
+
+Reason codes are limited to:
+
+```text
+ALL_CORE_REQUIREMENTS_SUPPORTED
+MULTIPLE_SUPPORTED_ROUTES_NEED_RESOLUTION
+NO_CORE_REQUIREMENT_SUPPORTED
+SOME_CORE_REQUIREMENTS_UNSUPPORTED
+ROUTER_DECLARED_UNSUPPORTED
+ROUTER_CAPABILITY_CONTRADICTION
+CAPABILITY_ASSESSMENT_MISSING
+INVALID_PROBLEM_INPUT
+ROUTING_TRANSPORT_FAILED
+```
+
+The disposition is computed only from typed Router decision, typed Capability Fit, typed
+ProblemRequirements and explicit error-path flags. No LLM decides it.
+
+## 3. Decision precedence
+
+- `Capability Fit = UNSUPPORTED` → `UNSUPPORTED_CAPABILITY`, even when Router is
+  `AMBIGUOUS`; clarification cannot create a missing runner/validator.
+- `SINGLE_TASK` / `MULTI_TASK`:
+  - supported → `READY`
+  - partially supported → `PARTIALLY_SUPPORTED`
+  - unsupported → `UNSUPPORTED_CAPABILITY`
+  - missing assessment → `BLOCKED_CONTRACT_INCONSISTENCY`
+- `AMBIGUOUS`:
+  - supported → `NEEDS_CLARIFICATION`
+  - partially supported with a fully supported route candidate → `NEEDS_CLARIFICATION`
+  - partially supported with no fully supported candidate → `PARTIALLY_SUPPORTED`
+  - unsupported → `UNSUPPORTED_CAPABILITY`
+- Router `UNSUPPORTED` + Fit `UNSUPPORTED` → `UNSUPPORTED_CAPABILITY`.
+- Router `UNSUPPORTED` + Fit `SUPPORTED`/`PARTIALLY_SUPPORTED` →
+  `BLOCKED_CONTRACT_INCONSISTENCY` (`ROUTER_CAPABILITY_CONTRADICTION`).
+- Invalid input / routing transport failure → typed blocked states.
+
+Only `READY` permits a formal modeling execution. `PARTIALLY_SUPPORTED` cannot claim full
+problem completion. `NEEDS_CLARIFICATION` is emitted only when a fully supported route
+candidate exists and route resolution is genuinely needed.
+
+## 4. 2025 B burned regression
+
+A deterministic replay read the frozen canonical artifacts, without a new LLM call:
+
+- Router: `AMBIGUOUS` / `BLOCKED_NEEDS_CLARIFICATION`
+- Capability Fit: `UNSUPPORTED`
+- Requirements: q1/q2/q3 unsupported
+- **ExecutionDisposition: `UNSUPPORTED_CAPABILITY`**
+- Reason: `NO_CORE_REQUIREMENT_SUPPORTED`
+- Affected requirements: `q1`, `q2`, `q3`
+- Disposition record hash:
+  `212aed5f19ae0b835724510778da839545685370690f478dfb883191318d208c`
+- Artifacts: `benchmarks/remediation/disposition/cumcm-2025-blind-01/`
+- Canonical 2025 result hash before/after:
+  `23170003a04ca75266d831634abf898d0ec6682da110d775355c89f77676a3ae`
+  (unchanged)
+- 2026 result hash remains
+  `8149a4d67f91769a13b28c01e22d50c8bff5957af73f77fa5773711ec2f5a700`.
+
+This resolves the R2 semantic question without rewriting the canonical benchmark verdict:
+the canonical run remains VALID / BLOCKED; it would now report
+`UNSUPPORTED_CAPABILITY` at the disposition layer.
+
+## 5. Staleness
+
+Disposition records contain Router hash, Capability Fit hash and requirements hash.
+`disposition_is_stale` invalidates a disposition when any input changes. Old dispositions
+must not be reused after Router, Fit or Requirement changes.
+
+## 6. Tests
+
+New `tests/test_disposition.py` covers the full truth table:
+
+- SINGLE/MULTI + SUPPORTED/PARTIAL/UNSUPPORTED
+- AMBIGUOUS + SUPPORTED/UNSUPPORTED/PARTIAL (with and without a fully supported candidate)
+- UNSUPPORTED + UNSUPPORTED/SUPPORTED contradiction
+- invalid input, routing failure, missing fit
+- modeling guard only for READY
+- staleness for router/fit/requirements hash changes
+- canonical 2025 B replay and result-hash immutability
+
+Verification:
+
+- `uv run pytest`: **357 passed, 3 deselected**
+- `uv run ruff check .`: passed
+- `uv run pyright`: 0 errors, 0 warnings
+
+## 7. Real bugs fixed
+
+- Router `AMBIGUOUS` and capability `UNSUPPORTED` could be presented as a single
+  “clarification” blocker; separated into independent Router, Capability Fit and
+  ExecutionDisposition layers.
+- Missing capability assessment could be treated as a route outcome; now fails closed as
+  `BLOCKED_CONTRACT_INCONSISTENCY`.
+- Router/Capability contradictions are now explicit instead of selecting one arbitrary
+  result.
+- Modeling entry is now gated on `ExecutionDisposition == READY`, not Router status alone.
+
+## 8. Commit
+
+`fix(phase-24.r2): reconcile routing and capability disposition`
+
+No push. Stop after R2; do not open 2025 B solutions, implement optical capabilities, start
+fresh blind #3, or start Phase 25.

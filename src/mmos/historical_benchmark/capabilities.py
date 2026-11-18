@@ -300,6 +300,11 @@ def assess_capability_fit(
         blocking_gaps=gaps,
         evidence_for_capability=sorted(evidence),
         verdict=overall,
+        assessment_complete=True,
+        core_requirement_count=len(requirements),
+        supported_core_requirement_count=len(supported),
+        partial_core_requirement_count=len(partially_supported),
+        unsupported_core_requirement_count=len(unsupported),
     )
     return assessment.model_copy(
         update={

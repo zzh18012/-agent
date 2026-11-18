@@ -220,7 +220,59 @@ class CapabilityFitAssessment(MMOSModel):
     blocking_gaps: list[CapabilityGap] = Field(default_factory=list)
     evidence_for_capability: list[str] = Field(default_factory=list)
     verdict: CapabilityVerdict
+    assessment_complete: bool = True
+    fully_supported_route_candidates: list[str] = Field(default_factory=list)
+    partially_supported_route_candidates: list[str] = Field(default_factory=list)
+    unsupported_route_candidates: list[str] = Field(default_factory=list)
+    core_requirement_count: int = Field(default=0, ge=0)
+    supported_core_requirement_count: int = Field(default=0, ge=0)
+    partial_core_requirement_count: int = Field(default=0, ge=0)
+    unsupported_core_requirement_count: int = Field(default=0, ge=0)
     assessment_hash: str = ""
+
+
+class ExecutionDisposition(StrEnum):
+    READY = "ready"
+    NEEDS_CLARIFICATION = "needs_clarification"
+    PARTIALLY_SUPPORTED = "partially_supported"
+    UNSUPPORTED_CAPABILITY = "unsupported_capability"
+    BLOCKED_INVALID_INPUT = "blocked_invalid_input"
+    BLOCKED_ROUTING_FAILURE = "blocked_routing_failure"
+    BLOCKED_CONTRACT_INCONSISTENCY = "blocked_contract_inconsistency"
+
+
+class DispositionReason(StrEnum):
+    ALL_CORE_REQUIREMENTS_SUPPORTED = "all_core_requirements_supported"
+    MULTIPLE_SUPPORTED_ROUTES_NEED_RESOLUTION = "multiple_supported_routes_need_resolution"
+    NO_CORE_REQUIREMENT_SUPPORTED = "no_core_requirement_supported"
+    SOME_CORE_REQUIREMENTS_UNSUPPORTED = "some_core_requirements_unsupported"
+    ROUTER_DECLARED_UNSUPPORTED = "router_declared_unsupported"
+    ROUTER_CAPABILITY_CONTRADICTION = "router_capability_contradiction"
+    CAPABILITY_ASSESSMENT_MISSING = "capability_assessment_missing"
+    INVALID_PROBLEM_INPUT = "invalid_problem_input"
+    ROUTING_TRANSPORT_FAILED = "routing_transport_failed"
+
+
+class ExecutionDispositionRecord(MMOSModel):
+    disposition_id: str
+    source_problem_hash: str
+    router_result_id: str
+    router_result_hash: str
+    capability_fit_id: str
+    capability_fit_hash: str
+    requirements_hash: str
+    disposition: ExecutionDisposition
+    reason_code: DispositionReason
+    affected_requirement_ids: list[str] = Field(default_factory=list)
+    supported_requirement_ids: list[str] = Field(default_factory=list)
+    unsupported_requirement_ids: list[str] = Field(default_factory=list)
+    created_at: datetime
+    record_hash: str = ""
+
+    @model_validator(mode="after")
+    def _aware(self) -> ExecutionDispositionRecord:
+        ensure_aware(self.created_at, "created_at")
+        return self
 
 
 class BurnRegistry(MMOSModel):
@@ -302,6 +354,9 @@ __all__ = [
     "CapabilityFitAssessment",
     "CapabilityGap",
     "CapabilityVerdict",
+    "DispositionReason",
+    "ExecutionDisposition",
+    "ExecutionDispositionRecord",
     "HistoricalBenchmarkRun",
     "HistoricalBenchmarkState",
     "LeakageEvent",

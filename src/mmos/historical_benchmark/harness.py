@@ -248,15 +248,11 @@ class HistoricalBenchmarkHarness:
         return self._write_run(run)
 
     def load_run(self) -> HistoricalBenchmarkRun:
-        return HistoricalBenchmarkRun.model_validate_json(
-            self.run_file.read_text(encoding="utf-8")
-        )
+        return HistoricalBenchmarkRun.model_validate_json(self.run_file.read_text(encoding="utf-8"))
 
     def record_freshness_registry(self, registry_hash: str) -> HistoricalBenchmarkRun:
         run = self.load_run()
-        return self._write_run(
-            run.model_copy(update={"freshness_registry_hash": registry_hash})
-        )
+        return self._write_run(run.model_copy(update={"freshness_registry_hash": registry_hash}))
 
     def log_leakage(
         self,
@@ -447,18 +443,12 @@ class HistoricalBenchmarkHarness:
             return True
         if not self.reserve_authorization_file.exists():
             return False
-        authorization = json.loads(
-            self.reserve_authorization_file.read_text(encoding="utf-8")
-        )
+        authorization = json.loads(self.reserve_authorization_file.read_text(encoding="utf-8"))
         prior_id = str(authorization.get("prior_run_id", ""))
-        prior_file = (
-            self.repo_root / "benchmarks" / "historical" / prior_id / "benchmark_run.json"
-        )
+        prior_file = self.repo_root / "benchmarks" / "historical" / prior_id / "benchmark_run.json"
         if not prior_file.exists():
             return False
-        prior = HistoricalBenchmarkRun.model_validate_json(
-            prior_file.read_text(encoding="utf-8")
-        )
+        prior = HistoricalBenchmarkRun.model_validate_json(prior_file.read_text(encoding="utf-8"))
         return prior.protocol_validity is ProtocolValidity.INVALIDATED_INFRASTRUCTURE
 
     def reveal(
@@ -721,9 +711,7 @@ class HistoricalBenchmarkHarness:
         checks["no_human_scientific_intervention"] = not human
         checks["one_reveal"] = self.reveal_file.exists()
         if reveal.problem_label != selection.primary_label:
-            checks["reserve_authorized"] = self._reserve_allowed(
-                reveal.problem_label
-            )
+            checks["reserve_authorized"] = self._reserve_allowed(reveal.problem_label)
         audit = BenchmarkBlindnessAudit(
             checks=checks,
             prohibited_access_count=len(prohibited),
