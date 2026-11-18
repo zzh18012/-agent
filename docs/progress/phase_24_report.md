@@ -661,3 +661,173 @@ Verification:
 
 No push. Stop after R2; do not open 2025 B solutions, implement optical capabilities, start
 fresh blind #3, or start Phase 25.
+
+# Phase 24.3 — Fresh Historical Blind Benchmark #3
+
+## 1. Freshness preflight and burn state
+
+Before opening any 2024 A/B/C content, a freshness preflight scanned historical run
+metadata, the burn registry, remediation records and runtime project specs. The pre-reveal
+2024 registry had no burned labels:
+
+```text
+pre-reveal burned_labels: []
+pre-reveal registry hash: bd4de93b4d064d2d49a6fa706356c49cf99dcae5fa5eb5ecb85ca2f1c8337c8a
+```
+
+After reveal, B is burned:
+
+```text
+post-run burned_labels: ["B"]
+post-run registry hash: a6d7f2c69deff38cec2823787f35b00af87638371444115550be6b3cf336068a
+```
+
+2026 A/B/C and 2025 B remain burned. Training-contamination caveat remains:
+
+```text
+operational_blind = true
+training_contamination_verifiable = false
+```
+
+No 2024 solution, lecture, award paper, blog, or third-party problem mirror was accessed.
+
+## 2. Source and selection
+
+- Competition: 2024 CUMCM
+- Official source page: `https://www.mcm.edu.cn/`
+- Official archive URL:
+  `https://www.mcm.edu.cn/upload_cn/node/725/pmkWxf8H9cfe9984c1a1a5b1263e5dd3b5596ed5.zip`
+- Archive SHA-256:
+  `38d9effcede947354f9e9a9c2b4fc68947d83a77c2ff75737e9a662888158726`
+- Archive size: `105,537,539` bytes
+- Source manifest hash:
+  `8531c9582de8d74e51c121066bf0828f9bbe5b179dad7d5e78c083dab0ed39a6`
+
+Selection before reveal:
+
+```text
+B  b4ea80d7413d618378362db6547c6f60286e4c2fc74ca8056489b8b493b362fd  primary
+A  b8494e2c527016ad635262c8e58f70c9867c41408bd7965b6cea7b112eb3a9ec  reserve_1
+C  bb7d6667ef4213aaa879830aa7c8e72b170187ec1d608b1fe28c4089203ebfb7  reserve_2
+```
+
+Selection manifest hash:
+`663fbf17b7427546645ef377c34d78121984869b7ff556a30064a9340df4a8fc`.
+Revealed problem: **2024 B 生产过程中的决策问题**, reveal hash
+`3eb07449df68a38ea78dd6326867cc6c323a8a9f6d788692e6b955b4ef2fac37`.
+
+Code freeze before reveal:
+
+- commit `11c1fa23164c888be065e569395dcfbbc423bb85`
+- clean worktree: `true`
+- freeze hash: `fb9f27ec9113a6604d8e16acd8e72467d6c664ca5bb54993898f4e3762e3f743`
+- tests: 360 passed, 3 deselected; ruff/pyright clean
+
+No infrastructure invalidation occurred.
+
+## 3. Router
+
+- Provider/model: `deepseek` / `deepseek-chat`
+- R1 OpenAI-compatible Chat Completions, `json_object` structured mode
+- Attempts: 3 total
+  - `problem_spec` attempt 1: schema invalid after a JSON parse, bounded retry
+  - `problem_spec` attempt 2: syntax/schema passed, finish `stop`, 8703 chars / 4134
+    completion tokens
+  - `problem_signals` attempt 1: syntax/schema/semantic passed, finish `stop`, 3068 chars
+    / 708 completion tokens
+- Router decision: `SINGLE_TASK` / `optimization` / `READY_FOR_SINGLE_TASK`
+- Routing audit: passed
+- No LLM transport failure; the R1 schema/retry path handled the malformed first attempt.
+
+## 4. Requirements and Capability Fit
+
+Four explicit requirements were extracted:
+
+| ID | Requirement | Capability Fit |
+|---|---|---|
+| q1 | Minimum-cost sampling inspection / acceptance decision with confidence levels | `UNSUPPORTED` |
+| q2 | Per-stage inspection / assembly / disassembly / exchange decision for six cases | `UNSUPPORTED` |
+| q3 | General m-stage, n-component production decision instance | `UNSUPPORTED` |
+| q4 | Redo q2/q3 when defect rates are estimated through sampling | `UNSUPPORTED` |
+
+Capability descriptors are limited to tabular prediction/forecasting, 0/1 knapsack MILP,
+M/M/1 simulation, max-flow, and bi-objective binary portfolio. They do not cover:
+
+- acceptance sampling / hypothesis-test design with error probabilities
+- stochastic defect/yield propagation with sequential rework
+- general multi-stage BOM inspection/disassembly optimization
+- sampling-uncertainty propagation into production decisions
+
+Capability Fit verdict: **UNSUPPORTED**.
+
+## 5. Execution Disposition and coverage
+
+- ExecutionDisposition: `UNSUPPORTED_CAPABILITY`
+- Reason: `NO_CORE_REQUIREMENT_SUPPORTED`
+- Disposition record hash:
+  `16abf643534761bb9395ed2c16e7e00d6460c6ee451e03fab4b5ebb05d68ad5b`
+- Coverage: 4 core requirements, 0 supported, 0 partial, 4 unsupported
+- coverage_fraction: `0.0`
+- First blocking stage: `capability_fit`
+- Router reached: true; Capability Fit reached: true; Modeling: not reached
+- Paper/audits/Judge: not reached
+
+## 6. Capability gaps
+
+Detailed gaps are under
+`benchmarks/historical/cumcm-2024-blind-01/capability_gaps_detailed.json`:
+
+- acceptance-sampling / confidence-controlled inspection design (potentially general)
+- discrete production-stage inspection/assembly/disassembly/exchange optimization with
+  defect propagation (potentially general)
+- general m-stage/n-component BOM decision optimization (potentially general)
+- sampling-uncertainty propagation into production decisions (potentially general)
+
+No capability was implemented in this phase.
+
+## 7. Final verdict
+
+```text
+Protocol validity: VALID
+Blindness audit: PASS
+Router: PASS
+Capability Fit: UNSUPPORTED
+Execution Disposition: UNSUPPORTED_CAPABILITY
+Scientific verdict: BLOCKED
+External competition quality: NOT_YET_ASSESSED
+```
+
+Benchmark result hash:
+`01d604017896d561a27b5714e8e793135100c3c405f460557c20047288b80e75`.
+Artifact root: `benchmarks/historical/cumcm-2024-blind-01/`.
+
+## 8. Cross-run first blockers
+
+```text
+2026 blind: Router structured-output failure (later remediated by R1)
+2025 blind: Capability Fit — optical/spectral/inverse requirements unsupported
+2024 blind: Capability Fit — sampling / production-decision requirements unsupported
+```
+
+These are capability samples, not a success rate.
+
+## 9. Immutability and verification
+
+- 2026 canonical result remains
+  `8149a4d67f91769a13b28c01e22d50c8bff5957af73f77fa5773711ec2f5a700`
+- 2025 canonical result remains
+  `23170003a04ca75266d831634abf898d0ec6682da110d775355c89f77676a3ae`
+- Phase 22 source release / augmentation evidence hashes unchanged
+- Phase 23 controller replay unchanged
+- `uv run pytest`: **360 passed, 3 deselected**
+- `uv run ruff check .`: passed
+- `uv run pyright`: 0 errors, 0 warnings
+- No new infrastructure bug was exposed; the R1 retry path correctly recovered from a
+  schema-invalid first structured attempt.
+
+## 10. Commit
+
+Phase 24.3 coverage code: `11c1fa2 feat(phase-24.3): add capability coverage snapshot`
+Final Phase 24.3 report commit: `feat(phase-24.3): run third fresh historical blind benchmark`
+
+No push. Stop after Phase 24.3.
