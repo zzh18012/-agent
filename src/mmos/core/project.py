@@ -8,6 +8,12 @@ from pathlib import Path
 
 import yaml
 
+from mmos.schemas.discrete import (
+    FinitePolicyResult,
+    FinitePolicySpec,
+    LinearMILPResult,
+    LinearMILPSpec,
+)
 from mmos.schemas.experiment import ExperimentSpec
 from mmos.schemas.graph import (
     FlowAuditResult,
@@ -333,6 +339,68 @@ def save_optimization_result(paths: ProjectPaths, result: OptimizationResult) ->
 def load_optimization_result(paths: ProjectPaths, experiment_id: str) -> OptimizationResult:
     return OptimizationResult.model_validate_json(
         optimization_result_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
+
+
+def linear_milp_spec_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "linear_milp_spec.json"
+
+
+def linear_milp_result_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "artifacts" / "linear_milp_result.json"
+
+
+def finite_policy_spec_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "finite_policy_spec.json"
+
+
+def finite_policy_result_file(paths: ProjectPaths, experiment_id: str) -> Path:
+    return paths.experiment_dir(experiment_id) / "artifacts" / "finite_policy_result.json"
+
+
+def save_linear_milp_spec(
+    paths: ProjectPaths, experiment_id: str, spec: LinearMILPSpec
+) -> Path:
+    target = linear_milp_spec_file(paths, experiment_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, spec.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_linear_milp_spec(paths: ProjectPaths, experiment_id: str) -> LinearMILPSpec:
+    return LinearMILPSpec.model_validate_json(
+        linear_milp_spec_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
+
+
+def load_linear_milp_result(
+    paths: ProjectPaths, experiment_id: str
+) -> LinearMILPResult:
+    return LinearMILPResult.model_validate_json(
+        linear_milp_result_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
+
+
+def save_finite_policy_spec(
+    paths: ProjectPaths, experiment_id: str, spec: FinitePolicySpec
+) -> Path:
+    target = finite_policy_spec_file(paths, experiment_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, spec.model_dump_json(indent=2) + "\n")
+    return target
+
+
+def load_finite_policy_spec(paths: ProjectPaths, experiment_id: str) -> FinitePolicySpec:
+    return FinitePolicySpec.model_validate_json(
+        finite_policy_spec_file(paths, experiment_id).read_text(encoding="utf-8")
+    )
+
+
+def load_finite_policy_result(
+    paths: ProjectPaths, experiment_id: str
+) -> FinitePolicyResult:
+    return FinitePolicyResult.model_validate_json(
+        finite_policy_result_file(paths, experiment_id).read_text(encoding="utf-8")
     )
 
 

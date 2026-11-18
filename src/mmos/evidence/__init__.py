@@ -1,4 +1,9 @@
 from mmos.evidence.benchmark_store import freeze_benchmark_suite
+from mmos.evidence.discrete import (
+    validate_and_register_finite_policy,
+    validate_and_register_linear_milp,
+    verify_policy_provenance,
+)
 from mmos.evidence.graph_store import freeze_graph
 from mmos.evidence.mixed_store import freeze_mixed
 from mmos.evidence.multi_objective_store import freeze_multi_objective
@@ -26,4 +31,7 @@ __all__ = [
     "freeze_simulation",
     "load_claims",
     "load_evidence_index",
+    "validate_and_register_finite_policy",
+    "validate_and_register_linear_milp",
+    "verify_policy_provenance",
 ]

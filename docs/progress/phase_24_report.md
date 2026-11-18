@@ -1127,3 +1127,229 @@ remain unchanged. No burned solution or lecture material was opened.
 `fix(phase-24.c1): tighten inference routing and uncertainty validation`
 
 No push. Stop after R1; do not start C2.
+
+# Phase 24.C2 — General Discrete Decision Optimization Foundation
+
+## 1. Benchmark motivation
+
+Phase 24.3 showed that the Router correctly identified CUMCM 2024 B as `optimization`, but
+Capability Fit returned `UNSUPPORTED` because the formal optimization slice was only
+`optimization.milp.knapsack_cbc` (0/1 knapsack with one capacity constraint). Real problems
+need multiple coupled discrete decisions, multi-stage choices, and cost/benefit accounting.
+
+C2 widens the Optimization family with two capability slices. It does not add a TaskFamily.
+
+## 2. New capability descriptors
+
+Added in `optimization_capability_descriptors()`:
+
+- `optimization.linear_milp` — descriptor hash
+  `1bbaf7557c247d4eacd231c5cce1ffc2e58986e3b5bc64cc1dfa14fe2fbb7d7b`
+- `optimization.finite_discrete_policy` — descriptor hash
+  `f7362aadade41bde0b91fd9cc067162361cb17ab21e096de412dc0a28477d428`
+
+The legacy `optimization.milp.knapsack_cbc` descriptor and its hashes are unchanged. New
+slices are matched from requirement text only when both a decision phrase and the relevant
+structure phrase are present; the finite-policy slice is reported as PARTIAL unless a
+registered evaluator exists for that requirement's domain.
+
+## 3. Linear MILP contract
+
+`src/mmos/schemas/discrete.py` defines a typed model: `MILPVariableSpec`,
+`LinearTerm`, `LinearExpression`, `LinearObjectiveSpec`, `LinearConstraintSpec`,
+`LinearMILPSpec`, and `MILPSolverConfig`.
+
+- Variable types: BINARY, INTEGER, CONTINUOUS auxiliary; at least one binary/integer
+  decision is mandatory, so a plain LP cannot be advertised as the C2 discrete slice.
+- Objective: MINIMIZE/MAXIMIZE with a constant and linear terms.
+- Constraints: LE / GE / EQ of `sum(a_i x_i)` against an RHS, plus variable bounds.
+- No expression language, no `eval`, no quadratic/indicator/SOS/nonlinear terms;
+  duplicate variables, unknown references, non-finite coefficients, and non-0/1 binary
+  bounds all fail closed.
+- Canonical instance hash sorts variables, constraints, and terms by id and includes the
+  solver configuration. Mutating one coefficient changes the instance hash.
+
+## 4. Solver semantics
+
+The runner reuses OR-Tools CBC only, with no second solver stack.
+
+- Status mapping is explicit: OPTIMAL maps to `optimal`; FEASIBLE maps to
+  `feasible_not_proven`; INFEASIBLE maps to `infeasible`; UNBOUNDED maps to `unbounded`;
+  NOT_SOLVED maps to `no_solution`; ABNORMAL maps to `solver_error`.
+- An incumbent that violates declared bounds, integrality, or constraints under the
+  declared tolerances is downgraded to `solver_error`; it is never promoted to optimal.
+- `optimal` evidence requires a proven-optimal CBC status, zero gap, and a matching best
+  bound. Time/node-limited incumbents keep `feasible_not_proven`, objective, best bound,
+  and reported gap.
+- Tolerances are part of the spec/result contract (`feasibility_tolerance`,
+  `integrality_tolerance`), not scattered magic numbers.
+
+## 5. Finite discrete policy contract
+
+`FinitePolicySpec` references a registered evaluator and fixed numeric parameters. The
+only registered evaluator is `registered.synthetic_process_policy` (five binary decisions,
+synthetic and explicitly not a real production model).
+
+- Decision domains are finite, explicit, JSON-serializable, and canonically ordered.
+- Evaluation returns feasibility, objective, metrics, and optional additive
+  `objective_components`.
+- Search is exhaustive enumeration only. The state space is computed before evaluation;
+  if it exceeds `max_enumerated_states`, the run is
+  `not_executed_state_space_limit` and produces no optimum.
+- Ties are resolved by canonical lexicographic order and the artifact records
+  `optimal_policy_count`, `selected_policy`, and `tie_break_rule`.
+- The evaluator implementation hash covers the registered class source, id, version,
+  decision definitions, parameter names, and description. A code/version change makes old
+  artifacts and evidence stale.
+- Optimum claims are limited to the explicitly enumerated finite policy space.
+
+## 6. Validator independence
+
+`src/mmos/validation/discrete.py` does not trust CBC or the runner:
+
+- Recomputes each constraint activity, slack, satisfaction flag, and the objective from
+  the frozen variable values.
+- Rechecks bounds and integrality, and verifies the result-artifact hash.
+- Runs an exhaustive oracle for small instances. Pure discrete models enumerate all
+  feasible assignments directly; models with continuous auxiliaries fix each discrete
+  assignment and solve the remaining LP independently. The oracle is used only as a
+  check and is skipped above its state limit.
+- For finite policies, independently re-enumerates the declared space, recomputes the
+  feasible count, optimum, tie count, selected policy, metrics, and component sums, and
+  rejects evaluator/version/hash drift.
+- An infeasible model must carry no variables, objective, or activities; the oracle must
+  find no feasible assignment when it can run. SOLVER_ERROR/NO_SOLUTION artifacts cannot
+  support evidence.
+
+## 7. Live formal experiments
+
+Project: `projects/c2-discrete-20261118/c2-discrete-20261118-0bafdc`
+Summary artifact: `benchmarks/remediation/capability-uplift/c2-live/live_experiments.json`
+
+### General MILP (`exp-c2-milp`)
+
+- 4 variables (2 binary, 1 integer, 1 continuous auxiliary), 5 constraints (LE/GE/EQ)
+- Instance hash `c108eed727a39c42433f08ad8b0df3d12a1174737088508cad99a9b7d6907e1f`
+- CBC status `optimal`, termination `proven_optimal`, objective `12.5`
+- Solution `x1=0, x2=1, y=2, z=1`
+- Exhaustive oracle (per-discrete-assignment continuous LP) agrees: 12.5
+- Artifact hash `a99d896d7d65564c07933f4b38989a7291fe38723886d71bac6d9cc50a5c90ee`
+- Artifact file SHA-256 `8fcdc1861590c3cf48780d821077018cc4d80198b989291d87f3dc7fdae7fb82`
+- Validator PASS; 22 Evidence records registered
+
+### Finite policy (`exp-c2-policy`)
+
+- Evaluator `registered.synthetic_process_policy` v1
+- Evaluator hash `0956a75bb0463cec0839b4e905e2b1c875ff9af0380014ee32f72f68363e741d`
+- 5 decisions; state space 32; 32 evaluated; 18 feasible; 1 optimal
+- Selected policy: inspect component only; objective `35.8`
+- Components: purchase 20.0, assembly 10.0, inspection 4.0, rework 0.0, penalty 1.8,
+  expedite 0.0 (sum matches objective)
+- Artifact hash `a54ee88a0d85b67ea6cd7ee119a71732c93dfa7025ec3c173cc7d76a98baab72`
+- Artifact file SHA-256 `573e6615eddd6179987134cb4437d9a8229f65f5b2f19ff71c5186118e27b3b9`
+- Validator PASS; 25 Evidence records registered
+
+### Infeasible MILP (`exp-c2-infeasible`)
+
+- Instance hash `18a0aa4a7acc2c35c8218b66c34585698a778e873d30c7608fc14e8aadd79396`
+- CBC status `infeasible`, termination `proven_infeasible`
+- No variable vector, no objective, no constraint activities; oracle confirms 0 feasible
+- Artifact hash `5f4219fe06fd3f481308818745a3ae841d54849b6fd51033089b98e046fd1400`
+- Artifact file SHA-256 `cb0c720280ea194cf6666c773a2f52bdb8ca9890b06a413c613747410ba7376d`
+- Validator PASS; only status/identity Evidence records, no optimum evidence
+
+## 8. C1 to C2 provenance smoke test
+
+- Source: `exp-c2-binom-source` (exact binomial, k=18, n=100, p0=0.10, greater, 95%)
+- Source point estimate 0.18; evidence `ev-exp-c2-binom-source-proportion`
+- Source artifact hash `b11f92dde79ced637c03486824330bdde387b8a9954ef993af1e215b044a3020`
+  (also the inference artifact file SHA-256)
+- Downstream: `exp-c2-inference-to-policy` freezes `defect_rate=0.18`
+- Selected policy is unchanged (inspect component only), objective 35.8
+- Downstream artifact hash `96af88a4065c09de1b3d7e2127e714aff668ee1d48bb83c24be8aec15cac8f90`
+- Artifact file SHA-256 `3693451e938e0f44ff4985e336274e49f60bb8e9db3ae5513ba28b4537d67ae5`
+- Provenance hash `73571fc91a3ffe4c483cff7de1242050ea2815ab116c24fbfd5a51923828f714`
+- Disclosure: `decision conditional on point estimates; uncertainty not propagated`
+- Registration fails if the source evidence hash or point estimate changes (stale check)
+
+This proves provenance wiring only. No distribution is propagated and no robust or
+uncertainty-aware optimum is claimed.
+
+## 9. Router regression and frozen suites
+
+No Router/TaskFamily change was made. Live frozen suites:
+
+- `routing-suite-v1`: status 1.000/1.000, single-task 1.000/1.000, multi-task 1.000/1.000,
+  ambiguous 1.000/1.000, unsupported 1.000/1.000, critical unsafe 0, stability 1.000.
+- `routing-suite-v2.1-inference`: same 1.000 across all metrics, critical unsafe 0,
+  stability 1.000.
+
+New deterministic tests cover generic MILP/finite-strategy routes to OPTIMIZATION and
+inference-then-optimization remains MULTI_TASK.
+
+## 10. Burned 2024 capability uplift replay
+
+Reused the deterministic C1 rerouted decision (Router/signals unchanged) and re-ran
+Capability Fit. Canonical benchmark results were not modified.
+
+```text
+canonical before : UNSUPPORTED         supported 0, partial 0, unsupported q1-q4
+C1 (before C2)   : PARTIALLY_SUPPORTED supported 0, partial q1/q4, unsupported q2/q3
+C2 (after)       : PARTIALLY_SUPPORTED supported 0, partial q1-q4, unsupported none
+coverage fraction: 0.0 before and after
+disposition      : PARTIALLY_SUPPORTED (hash 6c19add76a516a8212c52f16dd44ca991c318506bf8ff8de8505e6040aa7a1e6)
+first blocker    : capability_fit
+```
+
+q2/q3 are now partial because a generic finite-policy engine exists, but no registered
+production-process evaluator and no domain defect-propagation model exist. q1/q4 gain the
+finite-policy engine alongside the C1 inference slices. Disposition remains blocked.
+
+Remaining gaps: reusable multi-stage production/process evaluator, defect-propagation
+model, and uncertainty propagation into decisions.
+
+## 11. 2025 safety check
+
+Re-ran Capability Fit on the frozen 2025 rerouted decision: still `UNSUPPORTED` for q1-q3,
+disposition `unsupported_capability`, coverage 0.0. C2 does not create false optical
+support.
+
+## 12. Immutability
+
+- 2024 canonical result `01d604017896d561a27b5714e8e793135100c3c405f460557c20047288b80e75`
+- 2025 canonical result `23170003a04ca75266d831634abf898d0ec6682da110d775355c89f77676a3ae`
+- 2026 canonical result `8149a4d67f91769a13b28c01e22d50c8bff5957af73f77fa5773711ec2f5a700`
+- SHA256SUMS re-verified: 2024 46/46, 2025 129/129, 2026-blind-03 55/55
+- Phase 22/23 sealed artifacts untouched; no burned solution or lecture material opened
+
+## 13. Verification
+
+- `uv run pytest`: **397 passed, 3 deselected**
+- `uv run ruff check .`: passed
+- `uv run pyright`: 0 errors, 0 warnings
+
+## 14. Real bugs fixed
+
+- The new runner wrote the canonical instance before its `artifacts/` directory existed;
+  `atomic_write_text` does not create parents. Fixed by creating the directory explicitly.
+- `EvidenceRecord.provenance` only accepts string values; boolean/list provenance fields
+  failed registration. Serialized the boolean and source-evidence list explicitly.
+- Optional objective handling in the component-sum validator was tightened for type and
+  runtime safety.
+
+## 15. Limitations
+
+- MILP is typed linear only; no quadratic, indicator, SOS, nonlinear, stochastic, robust,
+  or dynamic-programming extensions.
+- Only one registered policy evaluator exists, and it is synthetic; it must not be cited
+  as a model of any real production process.
+- Finite search is exhaustive and fails closed above the explicit state limit.
+- Optimality claims are model-relative, not real-world-optimality claims.
+- C1 to C2 is point-estimate conditioning only; uncertainty is not propagated.
+
+## 16. Commit
+
+`feat(phase-24.c2): add general discrete decision optimization`
+
+No push. Stop after C2; do not implement a 2024 B production model, stochastic
+uncertainty propagation, an optical model, fresh blind #4, C3, or Phase 25.

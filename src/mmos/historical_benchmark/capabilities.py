@@ -107,6 +107,74 @@ _INFERENCE_SLICES = {
     ),
 }
 
+_KNAPSACK_KEYWORDS = (
+    "knapsack",
+    "0/1",
+    "binary selection",
+    "select item",
+    "item selection",
+    "capacity",
+)
+
+_LINEAR_MILP_KEYWORDS = (
+    "linear program",
+    "linear programming",
+    "integer linear",
+    "mixed-integer",
+    "mixed integer",
+    "milp",
+    "assignment problem",
+    "transportation problem",
+    "set covering",
+    "facility location",
+    "线性规划",
+    "整数规划",
+    "指派问题",
+    "运输问题",
+)
+
+_FINITE_POLICY_KEYWORDS = (
+    "policy",
+    "strategy selection",
+    "finite strateg",
+    "whether to inspect",
+    "inspection decision",
+    "rework decision",
+    "disassembly decision",
+    "决策",
+    "策略",
+    "检测",
+    "拆解",
+    "返工",
+    "调换",
+)
+
+_DECISION_KEYWORDS = (
+    "decision",
+    "decide",
+    "choose",
+    "select",
+    "assign",
+    "allocate",
+    "whether",
+    "决策",
+    "方案",
+    "是否",
+    "选择",
+)
+
+_OPTIMIZATION_LIMIT_KEYWORDS = (
+    "nonlinear integer",
+    "mixed-integer nonlinear",
+    "minlp",
+    "quadratic",
+    "stochastic programming",
+    "robust optimization",
+    "chance constraint",
+    "constraint programming",
+    "trajectory optimization",
+)
+
 _LIMIT_KEYWORDS = (
     "geometry",
     "geometric",
@@ -306,6 +374,73 @@ def inference_capability_descriptors() -> list[CapabilityDescriptor]:
     ]
 
 
+def optimization_capability_descriptors() -> list[CapabilityDescriptor]:
+    return [
+        _descriptor(
+            capability_id="optimization.linear_milp",
+            task_family=TaskFamily.OPTIMIZATION.value,
+            supported_problem_shapes=[
+                "typed linear MILP with binary/integer decisions and continuous auxiliaries",
+                "linear objective with LE/GE/EQ constraints and variable bounds",
+            ],
+            supported_input_types=["json linear MILP spec"],
+            supported_decision_types=["binary", "integer", "continuous auxiliary"],
+            supported_constraint_types=["linear le/ge/eq constraints"],
+            runner="mmos.experiments.discrete_runner.run_linear_milp",
+            validator="mmos.validation.discrete.validate_linear_milp_experiment",
+            regression_evidence=["tests/test_discrete_optimization.py"],
+            known_limits=[
+                "linear terms only; no quadratic, indicator, SOS, or nonlinear constraints",
+                "optimal evidence only when CBC proves optimality",
+                "optimal for the declared MILP instance only",
+            ],
+        ),
+        _descriptor(
+            capability_id="optimization.finite_discrete_policy",
+            task_family=TaskFamily.OPTIMIZATION.value,
+            supported_problem_shapes=[
+                "exhaustive search over an explicit finite policy space",
+                "registered policy evaluator with fixed numeric parameters",
+            ],
+            supported_input_types=["json finite policy spec", "registered evaluator"],
+            supported_decision_types=["finite explicit decision domains"],
+            supported_constraint_types=["evaluator-declared policy feasibility"],
+            runner="mmos.experiments.discrete_runner.run_finite_policy",
+            validator="mmos.validation.discrete.validate_finite_policy_experiment",
+            regression_evidence=["tests/test_discrete_optimization.py"],
+            known_limits=[
+                "exhaustive enumeration only; no genetic/annealing/beam search",
+                "state space must not exceed the explicit enumeration limit",
+                "optimal within the declared finite policy space only",
+                "no arbitrary evaluator code and no uncertainty propagation",
+            ],
+        ),
+    ]
+
+
+def _optimization_slice(
+    requirement: ProblemRequirement,
+) -> tuple[str | None, str | None, str | None]:
+    text = _text_for(requirement)
+    if any(keyword in text for keyword in _LIMIT_KEYWORDS):
+        return None, "requirement contains a known capability limit", None
+    if any(keyword in text for keyword in _OPTIMIZATION_LIMIT_KEYWORDS):
+        return None, "requirement needs an unsupported nonlinear/stochastic extension", None
+    if any(keyword in text for keyword in _KNAPSACK_KEYWORDS):
+        return capability_registry()[TaskFamily.OPTIMIZATION].capability_id, None, None
+    has_decision = any(keyword in text for keyword in _DECISION_KEYWORDS)
+    if has_decision and any(keyword in text for keyword in _LINEAR_MILP_KEYWORDS):
+        return "optimization.linear_milp", None, None
+    if has_decision and any(keyword in text for keyword in _FINITE_POLICY_KEYWORDS):
+        return (
+            "optimization.finite_discrete_policy",
+            None,
+            "generic finite-policy engine only; no registered evaluator for this "
+            "requirement's domain",
+        )
+    return None, "requirement does not match a formal discrete optimization slice", None
+
+
 def _inference_slice(requirement: ProblemRequirement) -> str | None:
     text = _text_for(requirement)
     matches = [
@@ -347,6 +482,10 @@ def assess_capability_fit(
     descriptors: dict[TaskFamily, CapabilityDescriptor] | None = None,
 ) -> CapabilityFitAssessment:
     registry = descriptors or capability_registry()
+    optimization_slices = {
+        descriptor.capability_id: descriptor
+        for descriptor in optimization_capability_descriptors()
+    }
     route_by_requirement = {
         route.subproblem_id: route.task_families for route in decision.subproblem_routes
     }
@@ -384,6 +523,23 @@ def assess_capability_fit(
                             *descriptor.regression_evidence,
                         ]
                     )
+                continue
+            if family is TaskFamily.OPTIMIZATION:
+                slice_id, failure, partial = _optimization_slice(requirement)
+                if slice_id is None:
+                    failures.append(f"{descriptor.capability_id}: {failure}")
+                else:
+                    available.append(slice_id)
+                    slice_descriptor = optimization_slices.get(slice_id, descriptor)
+                    evidence.update(
+                        [
+                            slice_descriptor.runner,
+                            slice_descriptor.validator,
+                            *slice_descriptor.regression_evidence,
+                        ]
+                    )
+                    if partial:
+                        failures.append(f"{slice_id}: {partial}")
                 continue
             ok, reason = _requirement_supported(requirement, family)
             if ok:
