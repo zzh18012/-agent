@@ -308,6 +308,29 @@ class HistoricalBenchmarkRun(MMOSModel):
         return self
 
 
+class CapabilityCoverageSnapshot(MMOSModel):
+    benchmark_run_id: str
+    core_requirement_count: int = Field(ge=0)
+    supported_count: int = Field(ge=0)
+    partial_count: int = Field(ge=0)
+    unsupported_count: int = Field(ge=0)
+    coverage_fraction: float = Field(ge=0.0, le=1.0)
+    router_reached: bool = False
+    capability_fit_reached: bool = False
+    modeling_reached: bool = False
+    experiment_reached: bool = False
+    evidence_reached: bool = False
+    paper_reached: bool = False
+    judge_reached: bool = False
+    first_blocking_stage: str
+    created_at: datetime
+
+    @model_validator(mode="after")
+    def _aware(self) -> CapabilityCoverageSnapshot:
+        ensure_aware(self.created_at, "created_at")
+        return self
+
+
 class BenchmarkResult(MMOSModel):
     benchmark_run_id: str
     competition: str
@@ -350,6 +373,7 @@ __all__ = [
     "BenchmarkSourceManifest",
     "BlindnessPolicy",
     "BurnRegistry",
+    "CapabilityCoverageSnapshot",
     "CapabilityDescriptor",
     "CapabilityFitAssessment",
     "CapabilityGap",
