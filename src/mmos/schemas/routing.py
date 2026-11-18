@@ -50,6 +50,7 @@ class ProblemSignals(MMOSModel):
     requires_acceptance_sampling: bool = False
     requires_nonlinear_parameter_estimation: bool = False
     requires_parameter_uncertainty: bool = False
+    inference_followed_by_decision: bool = False
 
     reported_evaluation_metrics: list[str] = Field(default_factory=list)
     insufficient_information: bool = False

@@ -1014,3 +1014,116 @@ with current descriptors. Canonical results were not modified.
 
 No push. Stop after C1; do not open burned solutions, implement optical/BOM capabilities,
 start fresh blind #4, or start Phase 25.
+
+# Phase 24.C1.R1 — Inference Routing & Uncertainty Validation
+
+## 1. Scope
+
+Pre-seal remediation for two quality issues in C1:
+
+1. acceptance-plan design was being routed as inference + optimization merely because
+   the capability searches over `(n, c)`;
+2. the only live NLS fixture was noise-free, so local uncertainty was not exercised on a
+   non-degenerate residual scale.
+
+No new capability was added. Existing C1 commits `0fba19a` and `e2f000f` are preserved.
+
+## 2. Routing semantic invariant
+
+TaskFamily describes the substantive problem stage, not a runner's internal method.
+A sample-size search inside an acceptance-plan design is internal to
+`STATISTICAL_INFERENCE` and does not create an independent `OPTIMIZATION` stage.
+
+Added `ProblemSignals.inference_followed_by_decision`. It is true only when an estimated
+parameter is used by a separate downstream decision task. Policy suppresses decision
+families for inference requests unless this flag is true.
+
+Before/after for the focused acceptance-plan case:
+
+```text
+Before C1.R1: MULTI_TASK [optimization, statistical_inference]
+After  C1.R1: SINGLE_TASK statistical_inference
+```
+
+## 3. Routing regression
+
+- Frozen `routing-suite-v1`: **1.000 / 1.000** all acceptance metrics, stability 1.000,
+  critical unsafe 0 (artifacts `c1-routing-v1c/`).
+- Original `routing-suite-v2-inference`: unchanged at 0.875 / 0.833, stable, critical 0;
+  its original manifest and results were not edited.
+- New `routing-suite-v2.1-inference` (same 8 focused cases, new manifest):
+  - manifest hash `b9981bd20d87ab9daadcc9db0ffc1ead0dfca8d79f4b7f20a5fdfc5e6e5871ad`
+  - status accuracy 1.000 / 1.000
+  - single-task 1.000 / 1.000
+  - multi-task recall 1.000 / 1.000
+  - ambiguous / unsupported 1.000 / 1.000
+  - critical unsafe 0; stability 1.000
+  - artifacts `benchmarks/remediation/capability-uplift/c1-routing-v2.1/`
+
+Regression tests additionally cover pure binomial, pure acceptance-plan, parameter
+estimation, inference followed by optimization, forecasting, and simulation families.
+
+## 4. Pure acceptance Router → Capability Fit → Disposition
+
+Deterministic integration using the live v2.1 routing decision:
+
+```text
+Router: SINGLE_TASK statistical_inference
+Capability Fit: SUPPORTED
+Available capability: statistical_inference.acceptance_single_binomial
+ExecutionDisposition: READY
+Reason: ALL_CORE_REQUIREMENTS_SUPPORTED
+Disposition hash: 5db2f3f3dd24e891fd996d9123f1f9c4a76814a21f0069158d4fb0dc385b7c2a
+```
+
+This is the key executable invariant repaired by R1.
+
+## 5. Noisy NLS live experiment
+
+Added `exp-c1-nls-noisy` without removing `exp-c1-nls`.
+
+- Forward model: `registered.exponential_decay`
+- Deterministic fixture: true parameters `[2.0, 0.5, 1.0]`
+- Noise: Gaussian, seed `20261118`, scale `0.05`, fixed-seed counter RNG in NumPy
+- Data hash: `b8981bb6159386cbf4f5027585b1f6f71d129efc72448004e15ae0fd73eacff9`
+- Fixture metadata hash: `81748b051b588dceda94e52500984b4420702c79ea2fef7d6579ae4fb92d2082`
+- Estimates: `[2.0272749114239175, 0.41457864312290116, 0.8645519627582975]`
+- SSE: `0.01383968934500527`; RMSE: `0.03396038052521064`
+- Jacobian rank: 3; selected start: 1; starts retained: 2
+- Local standard errors: amplitude `0.053527094225465026`, decay
+  `0.030231499714466335`, offset `0.05843811840534319`
+- Local intervals:
+  - amplitude `[1.922361806742006, 2.132188016105829]`
+  - decay `[0.35532490368254716, 0.47383238256325516]`
+  - offset `[0.7500132506838249, 0.9790906748327701]`
+- Uncertainty method: `LOCAL_LINEARIZATION`; approximate=true
+- Artifact file SHA-256:
+  `be20a577587319713f0fce708b37d2dbbbe14a193c6e2a5c5486556df6f49bdc`
+- 20 Evidence records registered; Validator PASS
+
+The fixture exercises non-zero SSE/RMSE, full rank, finite positive standard errors, and
+positive interval widths. It does not claim exact coverage or global identifiability.
+
+## 6. Robust-loss guard
+
+`loss != linear` continues to produce
+`uncertainty_status = NOT_IDENTIFIABLE_OR_UNSUPPORTED`; no covariance is fabricated.
+
+## 7. Verification
+
+- `uv run pytest`: **375 passed, 3 deselected**
+- `uv run ruff check .`: passed
+- `uv run pyright`: 0 errors, 0 warnings
+- Live: v1 1.000, v2.1 1.000, acceptance integration READY, noisy NLS Validator PASS,
+  20 evidence registered.
+
+## 8. Immutability
+
+2024/2025/2026 canonical benchmark hashes remain unchanged; Phase 22/23 sealed artifacts
+remain unchanged. No burned solution or lecture material was opened.
+
+## 9. Commit
+
+`fix(phase-24.c1): tighten inference routing and uncertainty validation`
+
+No push. Stop after R1; do not start C2.

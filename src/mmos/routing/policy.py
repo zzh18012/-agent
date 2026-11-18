@@ -77,11 +77,19 @@ def _subproblem_families(
     if graph_native:
         families.append(TaskFamily.GRAPH)
         reasons.extend(["graph_native_problem", "graph_structure_primary"])
+    inference_requested = (
+        signals.requires_parameter_inference
+        or signals.requires_hypothesis_test
+        or signals.requires_acceptance_sampling
+        or signals.requires_nonlinear_parameter_estimation
+        or signals.requires_parameter_uncertainty
+    )
     decision_problem = (
         not graph_native
         and signals.has_decision_variables
         and signals.has_hard_constraints
         and signals.objective_count >= 1
+        and not (inference_requested and not signals.inference_followed_by_decision)
     )
     if decision_problem:
         if (
@@ -108,15 +116,11 @@ def _subproblem_families(
     elif signals.has_supervised_target:
         families.append(TaskFamily.PREDICTION)
         reasons.append("supervised_target")
-    if (
-        signals.requires_parameter_inference
-        or signals.requires_hypothesis_test
-        or signals.requires_acceptance_sampling
-        or signals.requires_nonlinear_parameter_estimation
-        or signals.requires_parameter_uncertainty
-    ):
+    if inference_requested:
         families.append(TaskFamily.STATISTICAL_INFERENCE)
         reasons.append("statistical_inference_requested")
+        if signals.requires_acceptance_sampling and not signals.inference_followed_by_decision:
+            reasons.append("sample_size_search_is_internal")
     if signals.reported_evaluation_metrics and families == [TaskFamily.PREDICTION]:
         reasons.append("evaluation_metrics_not_objectives")
     families = sorted(set(families), key=lambda family: (_FAMILY_RANK[family], family.value))

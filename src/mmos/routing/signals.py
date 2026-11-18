@@ -113,6 +113,7 @@ has_uncertainty, time_structure, spatial_structure, graph_native, or any other k
         "requires_acceptance_sampling": false,
         "requires_nonlinear_parameter_estimation": false,
         "requires_parameter_uncertainty": false,
+        "inference_followed_by_decision": false,
         "reported_evaluation_metrics": [],
         "insufficient_information": false,
         "missing_information": [],

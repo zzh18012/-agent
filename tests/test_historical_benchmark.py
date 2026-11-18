@@ -431,3 +431,29 @@ def test_inference_capability_slices_are_not_family_wide() -> None:
     assert fit.verdict is CapabilityVerdict.PARTIALLY_SUPPORTED
     assert fit.supported == ["q1"]
     assert fit.unsupported == ["q2"]
+
+
+def test_pure_acceptance_fit_is_ready_for_execution() -> None:
+    from mmos.historical_benchmark.disposition import compute_disposition
+    from mmos.historical_benchmark.schemas import ExecutionDisposition
+
+    decision = _decision(
+        TaskFamily.STATISTICAL_INFERENCE, requirement_ids=["q1"]
+    )
+    requirement = _requirement(
+        "q1",
+        "design a single-sampling acceptance inspection plan with producer "
+        "risk 5% and consumer risk 10%",
+    )
+    fit = assess_capability_fit(decision, [requirement])
+    assert fit.verdict is CapabilityVerdict.SUPPORTED
+    assert fit.available_capabilities == [
+        "statistical_inference.acceptance_single_binomial"
+    ]
+    disposition = compute_disposition(
+        router=decision,
+        capability_fit=fit,
+        requirements=[requirement],
+        now=NOW,
+    )
+    assert disposition.disposition is ExecutionDisposition.READY

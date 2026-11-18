@@ -458,3 +458,48 @@ def test_inference_and_optimization_multi_task() -> None:
         TaskFamily.STATISTICAL_INFERENCE,
         TaskFamily.OPTIMIZATION,
     }
+
+
+def test_pure_acceptance_plan_is_inference_not_optimization() -> None:
+    decision = route(
+        make_problem(("q1", [])),
+        make_extraction(
+            (
+                "q1",
+                ProblemSignals(
+                    has_decision_variables=True,
+                    has_hard_constraints=True,
+                    objective_count=1,
+                    requires_acceptance_sampling=True,
+                    inference_followed_by_decision=False,
+                ),
+            )
+        ),
+    )
+    assert decision.status is RoutingStatus.SINGLE_TASK
+    assert decision.primary_task is TaskFamily.STATISTICAL_INFERENCE
+    assert TaskFamily.OPTIMIZATION not in decision.required_task_families
+    assert "sample_size_search_is_internal" in decision.reason_codes
+
+
+def test_inference_with_explicit_downstream_decision_is_multi() -> None:
+    decision = route(
+        make_problem(("q1", [])),
+        make_extraction(
+            (
+                "q1",
+                ProblemSignals(
+                    has_decision_variables=True,
+                    has_hard_constraints=True,
+                    objective_count=1,
+                    requires_parameter_inference=True,
+                    inference_followed_by_decision=True,
+                ),
+            )
+        ),
+    )
+    assert decision.status is RoutingStatus.MULTI_TASK
+    assert set(decision.required_task_families) == {
+        TaskFamily.STATISTICAL_INFERENCE,
+        TaskFamily.OPTIMIZATION,
+    }
