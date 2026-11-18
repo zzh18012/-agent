@@ -946,7 +946,7 @@ All values originate from validated artifacts; no LLM-authored numbers.
   case to inference; the prompt was tightened to exclude simulation/metric uncertainty.
   The clean rerun restored 1.000.
 - New `routing-suite-v2-inference` has 8 cases, manifest hash
-  `3bbf72f13a580b0105b41015c6786fcc0744ed98685102a34e73cc426089dcae`.
+  `2b86509bfeecbb8c9dd6a89df417ea03a9faa35ef30012d6c4da3ecfc0bbe28b`.
   Live runs: status accuracy 0.875/0.875, single-task 0.833/0.833, multi-task recall
   1.0/1.0, ambiguous 1.0/1.0, unsupported 1.0/1.0, critical unsafe 0, stability 1.0.
   One acceptance-plan case was classified `MULTI_TASK` because the model saw both
